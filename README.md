@@ -18,6 +18,19 @@
 3. **ダウンロード**: 分割されたファイルを個別、またはZIPで保存
 4. **NotebookLMへ投入**: ダウンロードしたファイルをNotebookLMにドラッグ＆ドロップ
 
+### Handling Very Large Files (multi-GB)
+
+The in-browser splitter is optimized for files up to a few hundred MB. For multi-GB files, browsers can run out of memory or stall. To support very large files, use the included local helper which requires a native `ffmpeg` installation:
+
+1. Install ffmpeg on your system (macOS: `brew install ffmpeg`, Ubuntu: `sudo apt install ffmpeg`, Windows: use the official static build).
+2. Run the helper:
+
+```bash
+node tools/split_large.js /path/to/largefile.mp4 195
+```
+
+This will create a `<basename>_split` directory with parts sized approximately to the specified maximum (in MB). The helper uses native `ffmpeg` and can handle multi-GB inputs without loading the entire file into browser memory.
+
 ## 開発者向け
 
 ### セットアップ
