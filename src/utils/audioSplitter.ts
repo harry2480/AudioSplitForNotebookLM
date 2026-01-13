@@ -49,8 +49,37 @@ export class WebAudioSplitter {
       onProgress?.(40);
       await yieldToMain();
       
-      const sampleRate = audioBuffer.sampleRate;
-      const numberOfChannels = audioBuffer.numberOfChannels;
+      // 自動モノラル化 + サンプルレート低減（ブラウザ負荷軽減）
+      let sampleRate = audioBuffer.sampleRate;
+      let numberOfChannels = audioBuffer.numberOfChannels;
+      const TARGET_SR = 22050;
+      const TARGET_CHANNELS = 1;
+
+      if (sampleRate > TARGET_SR || numberOfChannels > TARGET_CHANNELS) {
+        try {
+          const offline = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(
+            TARGET_CHANNELS,
+            Math.ceil(audioBuffer.duration * TARGET_SR),
+            TARGET_SR
+          );
+
+          const src = offline.createBufferSource();
+          // If original channels > target channels, create a merged buffer
+          const tmpBuf = offline.createBuffer(numberOfChannels, audioBuffer.length, audioBuffer.sampleRate);
+          for (let ch = 0; ch < numberOfChannels; ch++) tmpBuf.copyToChannel(audioBuffer.getChannelData(ch), ch);
+          src.buffer = tmpBuf;
+          // Connect through channel merger/matrix if necessary
+          src.connect(offline.destination);
+          src.start(0);
+
+          const rendered = await offline.startRendering();
+          audioBuffer = rendered;
+          sampleRate = audioBuffer.sampleRate;
+          numberOfChannels = audioBuffer.numberOfChannels;
+        } catch (e) {
+          console.warn('Resample failed, proceeding with original buffer', e);
+        }
+      }
       const duration = audioBuffer.duration;
       const totalSamples = audioBuffer.length;
       
