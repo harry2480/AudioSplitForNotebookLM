@@ -12,14 +12,6 @@ export default defineConfig({
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin'
-    },
-    proxy: {
-      '/api/cloudflare': {
-        target: 'https://gateway.ai.cloudflare.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/cloudflare/, ''),
-        secure: true
-      }
     }
   }
 })
