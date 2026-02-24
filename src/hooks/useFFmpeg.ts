@@ -246,106 +246,106 @@ export const useFFmpeg = () => {
       console.log('Using FFmpeg.wasm directly for stability...');
       const ffmpeg = await loadFFmpeg();
       console.log('FFmpeg loaded successfully');
+      
+      const fileNameForFFmpeg = file instanceof File ? file.name : 'audio.wav';
+      const inputFileName = 'input' + fileNameForFFmpeg.substring(fileNameForFFmpeg.lastIndexOf('.'));
+      const extension = fileNameForFFmpeg.substring(fileNameForFFmpeg.lastIndexOf('.') + 1);
+      
+      console.log('Writing file to FFmpeg:', inputFileName);
+      await ffmpeg.writeFile(inputFileName, await fetchFile(file));
+      
+      // Get actual duration
+      console.log('Getting audio duration...');
+      const duration = await getDuration(ffmpeg, inputFileName);
+      console.log('Audio duration:', duration, 'seconds');
+      
+      const results: Blob[] = [];
+      
+      if (mode === 'size' && options.maxSize) {
+        const maxSizeBytes = options.maxSize * 1024 * 1024;
+        const fileSize = file.size;
+        const numParts = Math.ceil(fileSize / maxSizeBytes);
+        const partDuration = duration / numParts;
         
-        const fileName = file instanceof File ? file.name : 'audio.wav';
-        const inputFileName = 'input' + fileName.substring(fileName.lastIndexOf('.'));
-        const extension = fileName.substring(fileName.lastIndexOf('.') + 1);
+        console.log('Splitting into', numParts, 'parts of', partDuration, 'seconds each');
         
-        console.log('Writing file to FFmpeg:', inputFileName);
-        await ffmpeg.writeFile(inputFileName, await fetchFile(file));
-        
-        // Get actual duration
-        console.log('Getting audio duration...');
-        const duration = await getDuration(ffmpeg, inputFileName);
-        console.log('Audio duration:', duration, 'seconds');
-        
-        const results: Blob[] = [];
-        
-        if (mode === 'size' && options.maxSize) {
-          const maxSizeBytes = options.maxSize * 1024 * 1024;
-          const fileSize = file.size;
-          const numParts = Math.ceil(fileSize / maxSizeBytes);
-          const partDuration = duration / numParts;
+        for (let i = 0; i < numParts; i++) {
+          const outputFile = `output_${i + 1}.${extension}`;
+          const startTime = i * partDuration;
+          const endTime = Math.min((i + 1) * partDuration, duration);
+          const actualDuration = endTime - startTime;
           
-          console.log('Splitting into', numParts, 'parts of', partDuration, 'seconds each');
+          console.log(`Part ${i + 1}: ${startTime}s to ${endTime}s (${actualDuration}s)`);
           
-          for (let i = 0; i < numParts; i++) {
-            const outputFile = `output_${i + 1}.${extension}`;
-            const startTime = i * partDuration;
-            const endTime = Math.min((i + 1) * partDuration, duration);
-            const actualDuration = endTime - startTime;
-            
-            console.log(`Part ${i + 1}: ${startTime}s to ${endTime}s (${actualDuration}s)`);
-            
-            if (actualDuration > 0) {
-              try {
-                await ffmpeg.exec([
-                  '-i', inputFileName,
-                  '-ss', startTime.toString(),
-                  '-t', actualDuration.toString(),
-                  '-c', 'copy',
-                  '-avoid_negative_ts', 'make_zero',
-                  outputFile
-                ]);
-                
-                const data = await ffmpeg.readFile(outputFile);
-                const dataArray = new Uint8Array(data as ArrayBuffer);
-                if (dataArray.byteLength > 0) {
-                  results.push(new Blob([dataArray], { type: file.type }));
-                  console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
-                }
-              } catch (error) {
-                console.error(`Error creating part ${i + 1}:`, error);
+          if (actualDuration > 0) {
+            try {
+              await ffmpeg.exec([
+                '-i', inputFileName,
+                '-ss', startTime.toString(),
+                '-t', actualDuration.toString(),
+                '-c', 'copy',
+                '-avoid_negative_ts', 'make_zero',
+                outputFile
+              ]);
+              
+              const data = await ffmpeg.readFile(outputFile);
+              const dataArray = new Uint8Array(data as ArrayBuffer);
+              if (dataArray.byteLength > 0) {
+                results.push(new Blob([dataArray], { type: file.type }));
+                console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
               }
-            }
-          }
-        } else if (mode === 'count' && options.count) {
-          const numParts = options.count;
-          const partDuration = duration / numParts;
-          
-          console.log('Splitting into', numParts, 'parts of', partDuration, 'seconds each');
-          
-          for (let i = 0; i < numParts; i++) {
-            const outputFile = `output_${i + 1}.${extension}`;
-            const startTime = i * partDuration;
-            const endTime = Math.min((i + 1) * partDuration, duration);
-            const actualDuration = endTime - startTime;
-            
-            console.log(`Part ${i + 1}: ${startTime}s to ${endTime}s (${actualDuration}s)`);
-            
-            if (actualDuration > 0) {
-              try {
-                await ffmpeg.exec([
-                  '-i', inputFileName,
-                  '-ss', startTime.toString(),
-                  '-t', actualDuration.toString(),
-                  '-c', 'copy',
-                  '-avoid_negative_ts', 'make_zero',
-                  outputFile
-                ]);
-                
-                const data = await ffmpeg.readFile(outputFile);
-                const dataArray = new Uint8Array(data as ArrayBuffer);
-                if (dataArray.byteLength > 0) {
-                  results.push(new Blob([dataArray], { type: file.type }));
-                  console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
-                }
-              } catch (error) {
-                console.error(`Error creating part ${i + 1}:`, error);
-              }
+            } catch (error) {
+              console.error(`Error creating part ${i + 1}:`, error);
             }
           }
         }
+      } else if (mode === 'count' && options.count) {
+        const numParts = options.count;
+        const partDuration = duration / numParts;
         
-        console.log('FFmpeg split completed, total parts:', results.length);
-        setIsLoading(false);
-        return results;
-      } catch (ffmpegError) {
-        console.error('Both Web Audio API and FFmpeg.wasm failed:', ffmpegError);
-        setIsLoading(false);
-        const ffmpegErrorMessage = ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError);
-        throw new Error(`音声ファイルの分割に失敗しました。ブラウザがサポートしていない可能性があります。\nエラー: ${ffmpegErrorMessage}`);
+        console.log('Splitting into', numParts, 'parts of', partDuration, 'seconds each');
+        
+        for (let i = 0; i < numParts; i++) {
+          const outputFile = `output_${i + 1}.${extension}`;
+          const startTime = i * partDuration;
+          const endTime = Math.min((i + 1) * partDuration, duration);
+          const actualDuration = endTime - startTime;
+          
+          console.log(`Part ${i + 1}: ${startTime}s to ${endTime}s (${actualDuration}s)`);
+          
+          if (actualDuration > 0) {
+            try {
+              await ffmpeg.exec([
+                '-i', inputFileName,
+                '-ss', startTime.toString(),
+                '-t', actualDuration.toString(),
+                '-c', 'copy',
+                '-avoid_negative_ts', 'make_zero',
+                outputFile
+              ]);
+              
+              const data = await ffmpeg.readFile(outputFile);
+              const dataArray = new Uint8Array(data as ArrayBuffer);
+              if (dataArray.byteLength > 0) {
+                results.push(new Blob([dataArray], { type: file.type }));
+                console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
+              }
+            } catch (error) {
+              console.error(`Error creating part ${i + 1}:`, error);
+            }
+          }
+        }
       }
+      
+      console.log('FFmpeg split completed, total parts:', results.length);
+      setIsLoading(false);
+      return results;
+    } catch (ffmpegError) {
+      console.error('Both Web Audio API and FFmpeg.wasm failed:', ffmpegError);
+      setIsLoading(false);
+      const ffmpegErrorMessage = ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError);
+      throw new Error(`音声ファイルの分割に失敗しました。ブラウザがサポートしていない可能性があります。\nエラー: ${ffmpegErrorMessage}`);
+    }
     }
   }, [loadFFmpeg]);
 
