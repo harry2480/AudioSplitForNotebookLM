@@ -14,13 +14,6 @@ export const useFFmpeg = () => {
     setIsLoading(true);
     const ffmpeg = new FFmpeg();
     
-    // Create a function to get absolute paths for assets
-    const getAssetURL = (path: string) => {
-      // If running on GitHub Pages, the base path is /AudioSplitForNotebookLM/
-      const base = import.meta.env.BASE_URL || '/';
-      return `${base}${path.startsWith('/') ? path.slice(1) : path}`;
-    };
-
     // Throttle progress updates to reduce UI stuttering
     let lastProgressUpdate = 0;
     ffmpeg.on('progress', ({ progress }) => {
