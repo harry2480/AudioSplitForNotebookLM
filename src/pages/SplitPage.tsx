@@ -13,6 +13,7 @@ export function SplitPage() {
   const [maxSize, setMaxSize] = useState(190);
   const [splitCount, setSplitCount] = useState(2);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isZipping, setIsZipping] = useState(false);
   const [splitFiles, setSplitFiles] = useState<SplitFile[]>([]);
   
   const { splitAudio, progress } = useFFmpeg();
@@ -53,14 +54,16 @@ export function SplitPage() {
         return {
           name: `${baseName}_part${index + 1}.${extension}`,
           size: blob.size,
-          blob
+          blob,
+          originalFileName: selectedFile.name
         };
       });
       
       setSplitFiles(files);
     } catch (error) {
       console.error('Error splitting audio:', error);
-      alert('音声ファイルの分割中にエラーが発生しました。');
+      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+      alert(`音声ファイルの分割中にエラーが発生しました:\n${errorMessage}`);
     } finally {
       setIsProcessing(false);
     }
@@ -70,9 +73,25 @@ export function SplitPage() {
     downloadFile(file);
   }, []);
 
-  const handleDownloadAll = useCallback(() => {
-    if (selectedFile && splitFiles.length > 0) {
-      downloadAllAsZip(splitFiles, selectedFile.name);
+  const handleDownloadAll = useCallback(async () => {
+    console.log('handleDownloadAll triggered with', splitFiles.length, 'files');
+    
+    if (splitFiles.length === 0) {
+      alert('ダウンロードするファイルがありません');
+      return;
+    }
+    
+    setIsZipping(true);
+    try {
+      // Use originalFileName from first file or use selected file name
+      const zipFileName = splitFiles[0].originalFileName || selectedFile?.name || 'audio_split';
+      console.log('Using fileName for ZIP:', zipFileName);
+      await downloadAllAsZip(splitFiles, zipFileName);
+    } catch (error) {
+      console.error('Error in handleDownloadAll:', error);
+      alert('ZIP保存に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setIsZipping(false);
     }
   }, [splitFiles, selectedFile]);
 
@@ -219,15 +238,26 @@ export function SplitPage() {
                 files={splitFiles}
                 onDownload={handleDownload}
                 onDownloadAll={handleDownloadAll}
+                originalFileName={selectedFile?.name}
               />
               
               {splitFiles.length > 1 && (
                 <button
                   onClick={handleDownloadAll}
-                  className="w-full mt-4 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+                  disabled={isZipping}
+                  className="w-full mt-4 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl disabled:from-green-400 disabled:to-emerald-400"
                 >
-                  <Download className="w-5 h-5" />
-                  すべてをZIPでダウンロード
+                  {isZipping ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      ZIP生成中...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-5 h-5" />
+                      すべてをZIPでダウンロード
+                    </>
+                  )}
                 </button>
               )}
               

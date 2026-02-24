@@ -89,13 +89,123 @@ export const useFFmpeg = () => {
     setIsLoading(true);
     setProgress(0);
     
+    // Check if it's an MP3 or other compressed format
+    const fileName = file instanceof File ? file.name : 'audio';
+    const isMP3 = fileName.toLowerCase().endsWith('.mp3') || file.type === 'audio/mpeg';
+    const isMp4 = fileName.toLowerCase().endsWith('.mp4') || file.type === 'audio/mp4';
+    
+    console.log('Split request:', { fileName, isMP3, isMp4, fileType: file.type, fileSize: file.size });
+    
+    // For MP3 and other compressed formats, use FFmpeg directly
+    if (isMP3 || isMp4) {
+      console.log('MP3/MP4 detected, using FFmpeg directly');
+      try {
+        const ffmpeg = await loadFFmpeg();
+        const inputFileName = 'input' + fileName.substring(fileName.lastIndexOf('.'));
+        const extension = fileName.substring(fileName.lastIndexOf('.') + 1);
+        
+        console.log('Writing file to FFmpeg:', inputFileName);
+        await ffmpeg.writeFile(inputFileName, await fetchFile(file));
+        
+        console.log('Getting audio duration...');
+        const duration = await getDuration(ffmpeg, inputFileName);
+        console.log('Audio duration:', duration, 'seconds');
+        
+        const results: Blob[] = [];
+        
+        if (mode === 'size' && options.maxSize) {
+          const maxSizeBytes = options.maxSize * 1024 * 1024;
+          const fileSize = file.size;
+          const numParts = Math.ceil(fileSize / maxSizeBytes);
+          const partDuration = duration / numParts;
+          
+          console.log('Splitting into', numParts, 'parts');
+          
+          for (let i = 0; i < numParts; i++) {
+            const outputFile = `output_${i + 1}.${extension}`;
+            const startTime = i * partDuration;
+            const endTime = Math.min((i + 1) * partDuration, duration);
+            const actualDuration = endTime - startTime;
+            
+            if (actualDuration > 0) {
+              try {
+                await ffmpeg.exec([
+                  '-i', inputFileName,
+                  '-ss', startTime.toString(),
+                  '-t', actualDuration.toString(),
+                  '-c', 'copy',
+                  '-avoid_negative_ts', 'make_zero',
+                  outputFile
+                ]);
+                
+                const data = await ffmpeg.readFile(outputFile);
+                const dataArray = new Uint8Array(data as ArrayBuffer);
+                if (dataArray.byteLength > 0) {
+                  results.push(new Blob([dataArray], { type: file.type }));
+                  console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
+                  setProgress(40 + (i + 1) / numParts * 60);
+                }
+              } catch (error) {
+                console.error(`Error creating part ${i + 1}:`, error);
+              }
+            }
+          }
+        } else if (mode === 'count' && options.count) {
+          const numParts = options.count;
+          const partDuration = duration / numParts;
+          
+          console.log('Splitting into', numParts, 'parts');
+          
+          for (let i = 0; i < numParts; i++) {
+            const outputFile = `output_${i + 1}.${extension}`;
+            const startTime = i * partDuration;
+            const endTime = Math.min((i + 1) * partDuration, duration);
+            const actualDuration = endTime - startTime;
+            
+            if (actualDuration > 0) {
+              try {
+                await ffmpeg.exec([
+                  '-i', inputFileName,
+                  '-ss', startTime.toString(),
+                  '-t', actualDuration.toString(),
+                  '-c', 'copy',
+                  '-avoid_negative_ts', 'make_zero',
+                  outputFile
+                ]);
+                
+                const data = await ffmpeg.readFile(outputFile);
+                const dataArray = new Uint8Array(data as ArrayBuffer);
+                if (dataArray.byteLength > 0) {
+                  results.push(new Blob([dataArray], { type: file.type }));
+                  console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
+                  setProgress(40 + (i + 1) / numParts * 60);
+                }
+              } catch (error) {
+                console.error(`Error creating part ${i + 1}:`, error);
+              }
+            }
+          }
+        }
+        
+        console.log('FFmpeg split completed, total parts:', results.length);
+        setIsLoading(false);
+        return results;
+      } catch (ffmpegError) {
+        console.error('FFmpeg error:', ffmpegError);
+        setIsLoading(false);
+        throw ffmpegError;
+      }
+    }
+    
+    // For WAV and other uncompressed formats, try Web Audio API first
     try {
-      // First try Web Audio API approach (more compatible)
-      console.log('Attempting Web Audio API splitting...');
+      console.log('Using Web Audio API...');
       const result = await splitAudioFile(file, mode, options, (progress) => {
+        console.log('Split progress:', progress);
         setProgress(progress);
       });
       
+      console.log('Web Audio API split completed:', result.length, 'parts');
       setIsLoading(false);
       return result;
     } catch (webAudioError) {
@@ -103,14 +213,19 @@ export const useFFmpeg = () => {
       
       try {
         // Fallback to FFmpeg.wasm
+        console.log('Loading FFmpeg...');
         const ffmpeg = await loadFFmpeg();
+        console.log('FFmpeg loaded successfully');
+        
         const fileName = file instanceof File ? file.name : 'audio.wav';
         const inputFileName = 'input' + fileName.substring(fileName.lastIndexOf('.'));
         const extension = fileName.substring(fileName.lastIndexOf('.') + 1);
         
+        console.log('Writing file to FFmpeg:', inputFileName);
         await ffmpeg.writeFile(inputFileName, await fetchFile(file));
         
         // Get actual duration
+        console.log('Getting audio duration...');
         const duration = await getDuration(ffmpeg, inputFileName);
         console.log('Audio duration:', duration, 'seconds');
         
@@ -147,6 +262,7 @@ export const useFFmpeg = () => {
                 const dataArray = new Uint8Array(data as ArrayBuffer);
                 if (dataArray.byteLength > 0) {
                   results.push(new Blob([dataArray], { type: file.type }));
+                  console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
                 }
               } catch (error) {
                 console.error(`Error creating part ${i + 1}:`, error);
@@ -182,6 +298,7 @@ export const useFFmpeg = () => {
                 const dataArray = new Uint8Array(data as ArrayBuffer);
                 if (dataArray.byteLength > 0) {
                   results.push(new Blob([dataArray], { type: file.type }));
+                  console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
                 }
               } catch (error) {
                 console.error(`Error creating part ${i + 1}:`, error);
@@ -190,12 +307,14 @@ export const useFFmpeg = () => {
           }
         }
         
+        console.log('FFmpeg split completed, total parts:', results.length);
         setIsLoading(false);
         return results;
       } catch (ffmpegError) {
         console.error('Both Web Audio API and FFmpeg.wasm failed:', ffmpegError);
         setIsLoading(false);
-        throw new Error('音声ファイルの分割に失敗しました。ブラウザがサポートしていない可能性があります。');
+        const ffmpegErrorMessage = ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError);
+        throw new Error(`音声ファイルの分割に失敗しました。ブラウザがサポートしていない可能性があります。\nエラー: ${ffmpegErrorMessage}`);
       }
     }
   }, [loadFFmpeg]);

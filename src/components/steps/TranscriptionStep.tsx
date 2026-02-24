@@ -6,6 +6,7 @@ interface SplitStepProps {
   splitFiles: SplitFile[];
   onDownloadSplit?: (file: SplitFile) => void;
   onDownloadAllSplits?: () => void;
+  onSplitCompleted?: (files: SplitFile[]) => void;
   splitAudio?: (file: File | Blob, mode: "size" | "count", options: { maxSize? : number; count?: number }) => Promise<Blob[]>;
   selectedFile?: File;
   onProcessingStateChange?: (isProcessing: boolean, progress?: { isSplitting?: boolean }) => void;
@@ -15,6 +16,7 @@ export function SplitStep({
   splitFiles, 
   onDownloadSplit,
   onDownloadAllSplits,
+  onSplitCompleted,
   splitAudio,
   selectedFile,
   onProcessingStateChange,
@@ -24,9 +26,20 @@ export function SplitStep({
   const [error, setError] = useState<string | null>(null);
   const [localSplitFiles, setLocalSplitFiles] = useState<SplitFile[]>(splitFiles || []);
   const [hasCompleted, setHasCompleted] = useState(false);
+  const [isZipping, setIsZipping] = useState(false);
   const processingRef = useRef(false);
 
   useEffect(() => { setLocalSplitFiles(splitFiles); if (splitFiles.length > 0) setHasCompleted(true); }, [splitFiles]);
+
+  const handleDownloadAllInternal = async () => {
+    if (!onDownloadAllSplits || isZipping) return;
+    setIsZipping(true);
+    try {
+      await onDownloadAllSplits();
+    } finally {
+      setIsZipping(false);
+    }
+  };
 
   const handleStartSplit = async () => {
     if (!selectedFile || !splitAudio || processingRef.current) return;
@@ -45,14 +58,17 @@ export function SplitStep({
       const splitParts = blobs.map((blob, partIndex) => ({
         name: `${partIndex + 1}_${originalNameWithoutExt}.mp3`,
         size: blob.size,
-        blob
+        blob,
+        originalFileName: selectedFile.name
       }));
       
       setLocalSplitFiles(splitParts);
+      onSplitCompleted?.(splitParts);
       setHasCompleted(true);
     } catch (e) {
       console.error(e);
-      setError("分割処理中にエラーが発生しました。");
+      const errorMessage = e instanceof Error ? e.message : '不明なエラーが発生しました';
+      setError(`分割処理中にエラーが発生しました: ${errorMessage}`);
     } finally {
       setIsProcessing(false);
       processingRef.current = false;
@@ -116,7 +132,10 @@ export function SplitStep({
                 {onDownloadSplit && localSplitFiles.map(file => (
                   <button
                     key={file.name}
-                    onClick={() => onDownloadSplit(file)}
+                    onClick={() => {
+                      console.log('Individual download clicked:', file.name);
+                      onDownloadSplit(file);
+                    }}
                     className="px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-all text-sm font-medium"
                   >
                      {file.name}
@@ -124,10 +143,18 @@ export function SplitStep({
                 ))}
                 {onDownloadAllSplits && localSplitFiles.length > 1 && (
                   <button
-                    onClick={onDownloadAllSplits}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-bold shadow-md"
+                    onClick={handleDownloadAllInternal}
+                    disabled={isZipping}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 transition-all text-sm font-bold shadow-md flex items-center gap-2"
                   >
-                     すべて一括保存 (ZIP)
+                     {isZipping ? (
+                       <>
+                         <Loader2 className="w-4 h-4 animate-spin" />
+                         ZIP生成中...
+                       </>
+                     ) : (
+                       "すべて一括保存 (ZIP)"
+                     )}
                   </button>
                 )}
               </div>
