@@ -42,7 +42,8 @@ export class WebAudioSplitter {
       await yieldToMain();
 
       console.log("Reading file...");
-      arrayBuffer = await file.arrayBuffer();
+      const arrayBufferRaw = await file.arrayBuffer();
+      arrayBuffer = arrayBufferRaw;
       console.log("File size:", arrayBuffer.byteLength, "bytes");
       onProgress?.(15);
       await yieldToMain();
@@ -51,7 +52,7 @@ export class WebAudioSplitter {
       console.log("Decoding audio data...");
       try {
         // Promise-based API (modern browsers)
-        audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+        audioBuffer = await this.audioContext.decodeAudioData(arrayBufferRaw);
         console.log("Audio decoded successfully:", {
           duration: audioBuffer.duration,
           sampleRate: audioBuffer.sampleRate,
@@ -70,7 +71,7 @@ export class WebAudioSplitter {
             }, 30000); // 30秒のタイムアウト
             
             (this.audioContext as AudioContext).decodeAudioData(
-              arrayBuffer,
+              arrayBufferRaw, // Use original since decodeAudioData might transfer bits
               (decoded) => {
                 clearTimeout(timeout);
                 console.log("Audio decoded with callback API");
