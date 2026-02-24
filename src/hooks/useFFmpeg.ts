@@ -14,6 +14,13 @@ export const useFFmpeg = () => {
     setIsLoading(true);
     const ffmpeg = new FFmpeg();
     
+    // Create a function to get absolute paths for assets
+    const getAssetURL = (path: string) => {
+      // If running on GitHub Pages, the base path is /AudioSplitForNotebookLM/
+      const base = import.meta.env.BASE_URL || '/';
+      return `${base}${path.startsWith('/') ? path.slice(1) : path}`;
+    };
+
     // Throttle progress updates to reduce UI stuttering
     let lastProgressUpdate = 0;
     ffmpeg.on('progress', ({ progress }) => {
@@ -27,13 +34,26 @@ export const useFFmpeg = () => {
       }
     });
 
-    // Use single-threaded version for compatibility with GitHub Pages
+    // Capture logs for debugging production issues
+    ffmpeg.on('log', ({ message }) => {
+      if (message.includes('Error') || message.includes('failed')) {
+        console.error('FFmpeg Log:', message);
+      }
+    });
+
+    // Use specific version and allow fallback
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
     
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-    });
+    try {
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      });
+    } catch (loadError) {
+      console.error('Failed to load FFmpeg from unpkg, trying local fallback...', loadError);
+      // Fallback or re-throw
+      throw loadError;
+    }
 
     ffmpegRef.current = ffmpeg;
     setIsLoading(false);
@@ -198,24 +218,34 @@ export const useFFmpeg = () => {
     }
     
     // For WAV and other uncompressed formats, try Web Audio API first
-    try {
-      console.log('Using Web Audio API...');
-      const result = await splitAudioFile(file, mode, options, (progress) => {
-        console.log('Split progress:', progress);
-        setProgress(progress);
-      });
-      
-      console.log('Web Audio API split completed:', result.length, 'parts');
-      setIsLoading(false);
-      return result;
-    } catch (webAudioError) {
-      console.warn('Web Audio API failed, trying FFmpeg.wasm...', webAudioError);
-      
+    // BUT only if file size is small enough to avoid memory crashes (Error Code 5)
+    const isSmallFile = (file instanceof File || file instanceof Blob) && file.size < 100 * 1024 * 1024;
+    const isWav = (file instanceof File ? file.name : '').toLowerCase().endsWith('.wav');
+
+    if (isSmallFile && isWav) {
       try {
-        // Fallback to FFmpeg.wasm
-        console.log('Loading FFmpeg...');
-        const ffmpeg = await loadFFmpeg();
-        console.log('FFmpeg loaded successfully');
+        console.log('Using Web Audio API...');
+        const result = await splitAudioFile(file, mode, options, (progress) => {
+          console.log('Split progress:', progress);
+          setProgress(progress);
+        });
+        
+        console.log('Web Audio API split completed:', result.length, 'parts');
+        setIsLoading(false);
+        return result;
+      } catch (webAudioError) {
+        console.warn('Web Audio API failed, trying FFmpeg.wasm...', webAudioError);
+        // Fall through to FFmpeg
+      }
+    } else {
+      console.log(`Skipping Web Audio API (size: ${((file instanceof Blob ? file.size : 0) / 1024 / 1024).toFixed(1)}MB, wav: ${isWav}) to prevent memory crash (Error Code 5)`);
+    }
+
+    try {
+      // Use FFmpeg directly for larger files or compressed formats
+      console.log('Using FFmpeg.wasm directly for stability...');
+      const ffmpeg = await loadFFmpeg();
+      console.log('FFmpeg loaded successfully');
         
         const fileName = file instanceof File ? file.name : 'audio.wav';
         const inputFileName = 'input' + fileName.substring(fileName.lastIndexOf('.'));
