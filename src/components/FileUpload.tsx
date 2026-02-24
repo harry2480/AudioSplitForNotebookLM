@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Upload, FileAudio, Music, Video } from 'lucide-react';
+import { Upload, FileAudio, Music, Video, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface FileUploadProps {
@@ -7,8 +7,25 @@ interface FileUploadProps {
   disabled?: boolean;
 }
 
+const validateAudioFile = (file: File): { valid: boolean; error?: string } => {
+  // Check file size - must be at least 10KB (likely not a valid audio file if smaller)
+  const minSize = 10 * 1024; // 10KB
+  if (file.size < minSize) {
+    return { valid: false, error: 'ファイルサイズが小さすぎます。別のファイルを選択してください。' };
+  }
+
+  // Check file size - shouldn't be larger than 1GB (practical limit)
+  const maxSize = 1 * 1024 * 1024 * 1024; // 1GB
+  if (file.size > maxSize) {
+    return { valid: false, error: 'ファイルサイズが大きすぎます（最大1GB）。' };
+  }
+
+  return { valid: true };
+};
+
 export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -23,6 +40,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    setValidationError(null);
 
     const files = Array.from(e.dataTransfer.files);
     const mediaFile = files.find(file => 
@@ -32,13 +50,26 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
     );
 
     if (mediaFile) {
+      const validation = validateAudioFile(mediaFile);
+      if (!validation.valid) {
+        setValidationError(validation.error || 'ファイルが無効です。');
+        return;
+      }
       onFileSelect(mediaFile);
+    } else {
+      setValidationError('音声・動画ファイルを選択してください。');
     }
   }, [onFileSelect]);
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setValidationError(null);
+      const validation = validateAudioFile(file);
+      if (!validation.valid) {
+        setValidationError(validation.error || 'ファイルが無効です。');
+        return;
+      }
       onFileSelect(file);
     }
   }, [onFileSelect]);
@@ -94,6 +125,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
           <span className="text-sm font-medium text-gray-700">MP4・MOV・AVI</span>
         </div>
       </div>
+
+      {validationError && (
+        <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700">{validationError}</p>
+        </div>
+      )}
     </div>
   );
 };

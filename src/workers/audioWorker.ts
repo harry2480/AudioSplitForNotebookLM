@@ -1,4 +1,6 @@
 /* Web Worker: performs WAV encoding and splitting from transferred channel buffers */
+console.log('Worker script loaded');
+
 export type WorkerMessage = {
   type: 'process';
   sampleRate: number;
@@ -66,31 +68,52 @@ async function encodeWavPart(
 }
 
 self.addEventListener('message', async (ev: MessageEvent) => {
-  const data = ev.data as WorkerMessage & { channelBuffers?: ArrayBuffer[] };
-  if (data.type !== 'process' || !data.channelBuffers) return;
+  try {
+    const data = ev.data as WorkerMessage & { channelBuffers?: ArrayBuffer[] };
+    if (data.type !== 'process' || !data.channelBuffers) {
+      console.error('Invalid message data:', data);
+      return;
+    }
 
-  const { sampleRate, totalSamples, numParts, baseSamplesPerPart, compress } = data;
+    const { sampleRate, totalSamples, numParts, baseSamplesPerPart, compress } = data;
 
-  // Reconstruct Float32Array per channel
-  const channelDatas: Float32Array[] = data.channelBuffers.map(buf => new Float32Array(buf));
+    console.log('Worker: Processing audio', {
+      sampleRate,
+      totalSamples,
+      numParts,
+      baseSamplesPerPart,
+      compress,
+      channelCount: data.channelBuffers.length
+    });
 
-  const results: ArrayBuffer[] = [];
+    // Reconstruct Float32Array per channel
+    const channelDatas: Float32Array[] = data.channelBuffers.map(buf => new Float32Array(buf));
 
-  for (let i = 0; i < numParts; i++) {
-    const startSample = i * baseSamplesPerPart;
-    const endSample = (i === numParts - 1) ? totalSamples : (i + 1) * baseSamplesPerPart;
-    const partLength = endSample - startSample;
+    const results: ArrayBuffer[] = [];
 
-    // Encode WAV for this part
-    const buf = await encodeWavPart(channelDatas, startSample, partLength, sampleRate, !!compress);
-    results.push(buf);
+    for (let i = 0; i < numParts; i++) {
+      const startSample = i * baseSamplesPerPart;
+      const endSample = (i === numParts - 1) ? totalSamples : (i + 1) * baseSamplesPerPart;
+      const partLength = endSample - startSample;
 
-    // progress update
-    const progress = 40 + Math.round(((i + 1) / numParts) * 55);
-    (self as any).postMessage({ type: 'progress', progress });
-    await yieldToMain();
+      console.log(`Worker: Encoding part ${i + 1}/${numParts}`, { startSample, endSample, partLength });
+
+      // Encode WAV for this part
+      const buf = await encodeWavPart(channelDatas, startSample, partLength, sampleRate, !!compress);
+      results.push(buf);
+
+      // progress update
+      const progress = 40 + Math.round(((i + 1) / numParts) * 55);
+      (self as any).postMessage({ type: 'progress', progress });
+      await yieldToMain();
+    }
+
+    console.log('Worker: Sending results', { resultCount: results.length });
+
+    // Return results as transferable ArrayBuffers
+    (self as any).postMessage({ type: 'result', parts: results }, results);
+  } catch (error) {
+    console.error('Worker message handling error:', error);
+    (self as any).postMessage({ type: 'error', message: String(error) });
   }
-
-  // Return results as transferable ArrayBuffers
-  (self as any).postMessage({ type: 'result', parts: results }, results);
 });

@@ -68,7 +68,8 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
       const sFiles = file.map((segment, index) => ({
         name: segment.name || `segment_${index + 1}.webm`,
         size: segment.size,
-        blob: new Blob([segment], { type: segment.type })
+        blob: new Blob([segment], { type: segment.type }),
+        originalFileName: file[0]?.name || 'audio'
       }));
       setSelectedFile(file[0]);
       startTransition(() => { setSplitFiles(sFiles); });
@@ -78,8 +79,23 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
   }, [cleanupSplitFiles]);
 
   const handleDownload = useCallback((file: SplitFile) => { downloadFile(file); }, []);
-  const handleDownloadAll = useCallback(() => {
-    if (selectedFile && splitFiles.length > 0) downloadAllAsZip(splitFiles, selectedFile.name);
+  const handleDownloadAll = useCallback(async () => {
+    // splitFilesがあれば実行できるように条件を緩和
+    if (splitFiles && splitFiles.length > 0) {
+      try {
+        console.log('handleDownloadAll triggered with', splitFiles.length, 'files');
+        // selectedFileがない場合は最初のファイルから取得を試みる
+        const fileName = selectedFile?.name || splitFiles[0].originalFileName || 'audio_split';
+        console.log('Using fileName for ZIP:', fileName);
+        await downloadAllAsZip(splitFiles, fileName);
+      } catch (error) {
+        console.error('Error in handleDownloadAll:', error);
+        setError('ZIP保存に失敗しました: ' + (error instanceof Error ? error.message : String(error)));
+      }
+    } else {
+      console.warn('handleDownloadAll: No splitFiles available', splitFiles);
+      setError('保存するファイルがありません。まずは分割を実行してください。');
+    }
   }, [splitFiles, selectedFile]);
 
   useEffect(() => {
@@ -145,6 +161,10 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
               splitAudio={splitAudio} 
               onDownloadSplit={handleDownload} 
               onDownloadAllSplits={handleDownloadAll}
+              onSplitCompleted={(files) => {
+                console.log('Split completed, updating parent state:', files.length, 'files');
+                setSplitFiles(files);
+              }}
             />
           </div>
         )}

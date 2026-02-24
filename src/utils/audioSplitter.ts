@@ -36,16 +36,59 @@ export class WebAudioSplitter {
     try {
       console.log("=== Starting audio splitting process ===");
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      console.log("AudioContext created:", this.audioContext.state);
       
       onProgress?.(5);
       await yieldToMain();
 
+      console.log("Reading file...");
       arrayBuffer = await file.arrayBuffer();
+      console.log("File size:", arrayBuffer.byteLength, "bytes");
       onProgress?.(15);
       await yieldToMain();
 
       // デコード処理（ここが最も重い）
-      audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      console.log("Decoding audio data...");
+      try {
+        // Promise-based API (modern browsers)
+        audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+        console.log("Audio decoded successfully:", {
+          duration: audioBuffer.duration,
+          sampleRate: audioBuffer.sampleRate,
+          numberOfChannels: audioBuffer.numberOfChannels,
+          length: audioBuffer.length
+        });
+      } catch (decodeError: any) {
+        console.log("Promise-based decodeAudioData failed, trying callback-based API:", decodeError?.message);
+        
+        // Try callback-based API (for older browsers)
+        try {
+          audioBuffer = await new Promise<AudioBuffer>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              console.error("DecodeAudioData callback timed out");
+              reject(new Error("DecodeAudioData timeout"));
+            }, 30000); // 30秒のタイムアウト
+            
+            (this.audioContext as AudioContext).decodeAudioData(
+              arrayBuffer,
+              (decoded) => {
+                clearTimeout(timeout);
+                console.log("Audio decoded with callback API");
+                resolve(decoded);
+              },
+              (error) => {
+                clearTimeout(timeout);
+                console.error("DecodeAudioData callback error:", error?.message || error?.code || error);
+                reject(error);
+              }
+            );
+          });
+        } catch (callbackError: any) {
+          const errorMessage = `Web Audio APIデコード失敗: ${callbackError?.message || decodeError?.message || '不明なエラー'}`;
+          console.error(errorMessage, { decodeError, callbackError });
+          throw new Error(errorMessage);
+        }
+      }
       onProgress?.(40);
       await yieldToMain();
       
@@ -115,36 +158,77 @@ export class WebAudioSplitter {
       const partsFromWorker: ArrayBuffer[] = [];
 
       const workerPromise: Promise<void> = new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          worker.terminate();
+          reject(new Error('Worker タイムアウト: 処理に時間がかかりすぎています'));
+        }, 300000); // 5分のタイムアウト
+
         const onMessage = (ev: MessageEvent) => {
-          const d = ev.data as any;
-          if (d?.type === 'progress') {
-            onProgress?.(d.progress);
-          } else if (d?.type === 'result' && Array.isArray(d.parts)) {
-            // parts are ArrayBuffers
-            partsFromWorker.push(...d.parts);
+          try {
+            const d = ev.data as any;
+            if (d?.type === 'progress') {
+              onProgress?.(d.progress);
+            } else if (d?.type === 'error') {
+              throw new Error(`Worker エラー: ${d.message}`);
+            } else if (d?.type === 'result' && Array.isArray(d.parts)) {
+              // parts are ArrayBuffers
+              partsFromWorker.push(...d.parts);
+              worker.removeEventListener('message', onMessage);
+              worker.removeEventListener('error', onError);
+              clearTimeout(timeoutId);
+              resolve();
+            }
+          } catch (err) {
+            console.error('onMessage エラー:', err);
             worker.removeEventListener('message', onMessage);
-            resolve();
+            worker.removeEventListener('error', onError);
+            clearTimeout(timeoutId);
+            worker.terminate();
+            reject(err);
           }
         };
 
+        const onError = (e: ErrorEvent) => {
+          console.error('Worker エラー:', e.message, e.filename, e.lineno);
+          worker.removeEventListener('message', onMessage);
+          worker.removeEventListener('error', onError);
+          clearTimeout(timeoutId);
+          reject(new Error(`Worker エラー: ${e.message}`));
+        };
+
         worker.addEventListener('message', onMessage);
-        worker.addEventListener('error', (e) => { worker.removeEventListener('message', onMessage); reject(e); });
+        worker.addEventListener('error', onError);
       });
 
       // Send processing request to worker
-      worker.postMessage(
-        {
-          type: 'process',
+      try {
+        console.log('Worker にメッセージを送信:', {
           sampleRate,
           numberOfChannels,
           totalSamples,
           numParts,
           baseSamplesPerPart,
-          compress: true,
+          channelBuffersCount: channelBuffers.length
+        });
+        
+        worker.postMessage(
+          {
+            type: 'process',
+            sampleRate,
+            numberOfChannels,
+            totalSamples,
+            numParts,
+            baseSamplesPerPart,
+            compress: true,
+            channelBuffers
+          },
           channelBuffers
-        },
-        channelBuffers
-      );
+        );
+      } catch (postError) {
+        console.error('Worker へのメッセージ送信エラー:', postError);
+        worker.terminate();
+        throw new Error(`Worker メッセージ送信エラー: ${postError}`);
+      }
 
       // wait for worker to finish
       await workerPromise;
@@ -160,9 +244,15 @@ export class WebAudioSplitter {
       return results;
     } catch (error) {
       console.error("Web Audio splitting failed:", error);
-      throw error;
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.log("Web Audio API failed, returning structured error for fallback");
+      throw new Error(`Web Audio API エラー: ${errorMsg}`);
     } finally {
-      this.cleanup();
+      try {
+        this.cleanup();
+      } catch (cleanupError) {
+        console.error('Cleanup エラー:', cleanupError);
+      }
       arrayBuffer = null;
       audioBuffer = null;
     }
