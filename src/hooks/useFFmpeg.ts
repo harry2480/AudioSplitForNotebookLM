@@ -346,7 +346,6 @@ export const useFFmpeg = () => {
       const ffmpegErrorMessage = ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError);
       throw new Error(`音声ファイルの分割に失敗しました。ブラウザがサポートしていない可能性があります。\nエラー: ${ffmpegErrorMessage}`);
     }
-    }
   }, [loadFFmpeg]);
 
   return {
