@@ -50,13 +50,17 @@ export function SplitStep({
     onProcessingStateChange?.(true, { isSplitting: true });
 
     try {
-      setStatus("分割の準備中...");
+      const isVideo = /\.(mp4|mov|avi|mkv|webm|m4v|3gp|flv|wmv)$/i.test(selectedFile.name);
+      setStatus(isVideo
+        ? "動画から音声を抽出中...（時間がかかる場合があります）"
+        : "分割の準備中...");
       const maxSizeMB = 195;
       const blobs = await splitAudio(selectedFile, "size", { maxSize: maxSizeMB });
-      
+
       const originalNameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, "");
+      const outputExt = blobs[0]?.type === 'audio/wav' ? 'wav' : 'mp3';
       const splitParts = blobs.map((blob, partIndex) => ({
-        name: `${partIndex + 1}_${originalNameWithoutExt}.mp3`,
+        name: `${partIndex + 1}_${originalNameWithoutExt}.${outputExt}`,
         size: blob.size,
         blob,
         originalFileName: selectedFile.name
