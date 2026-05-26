@@ -326,6 +326,7 @@ export const useFFmpeg = () => {
               if (dataArray.byteLength > 0) {
                 results.push(new Blob([dataArray], { type: workingFile.type }));
                 console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
+                setProgress(40 + (i + 1) / numParts * 60);
               }
             } catch (error) {
               console.error(`Error creating part ${i + 1}:`, error);
@@ -362,6 +363,7 @@ export const useFFmpeg = () => {
               if (dataArray.byteLength > 0) {
                 results.push(new Blob([dataArray], { type: workingFile.type }));
                 console.log(`Part ${i + 1} created, size:`, dataArray.byteLength);
+                setProgress(40 + (i + 1) / numParts * 60);
               }
             } catch (error) {
               console.error(`Error creating part ${i + 1}:`, error);

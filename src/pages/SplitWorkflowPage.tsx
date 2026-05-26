@@ -35,7 +35,7 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
     // 録音セグメントの状態変更を無視
   };
   
-  const { splitAudio } = useFFmpeg();
+  const { splitAudio, progress } = useFFmpeg();
 
   useEffect(() => {
     onStepStateChange?.({
@@ -155,10 +155,11 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
         {selectedFile && (
           <div className="bg-white rounded-2xl shadow-lg p-8">
             <h2 className="text-2xl font-bold mb-6">2. 分割保存</h2>
-            <SplitStep 
-              splitFiles={splitFiles} 
-              selectedFile={selectedFile} 
-              splitAudio={splitAudio} 
+            <SplitStep
+              splitFiles={splitFiles}
+              selectedFile={selectedFile}
+              splitAudio={splitAudio}
+              progress={progress}
               onDownloadSplit={handleDownload} 
               onDownloadAllSplits={handleDownloadAll}
               onSplitCompleted={(files) => {
