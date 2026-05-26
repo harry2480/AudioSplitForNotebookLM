@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef } from "react";
 import { Download, Loader2, AlertCircle, CheckCircle, Scissors } from "lucide-react";
 import type { SplitFile } from "../DownloadList";
+import { ProgressBar } from "../ProgressBar";
 
 interface SplitStepProps {
   splitFiles: SplitFile[];
@@ -9,6 +10,7 @@ interface SplitStepProps {
   onSplitCompleted?: (files: SplitFile[]) => void;
   splitAudio?: (file: File | Blob, mode: "size" | "count", options: { maxSize? : number; count?: number }) => Promise<Blob[]>;
   selectedFile?: File;
+  progress?: number;
   onProcessingStateChange?: (isProcessing: boolean, progress?: { isSplitting?: boolean }) => void;
 }
 
@@ -19,6 +21,7 @@ export function SplitStep({
   onSplitCompleted,
   splitAudio,
   selectedFile,
+  progress = 0,
   onProcessingStateChange,
 }: SplitStepProps) {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -103,7 +106,7 @@ export function SplitStep({
             <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
             <span className="text-xl font-bold text-blue-800">音声ファイルを分割中...</span>
           </div>
-          <p className="text-blue-700">{status}</p>
+          <ProgressBar progress={progress} message={status} className="mt-2" />
         </div>
       )}
 
