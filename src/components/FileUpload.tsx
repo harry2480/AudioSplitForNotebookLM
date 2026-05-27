@@ -14,12 +14,6 @@ const validateAudioFile = (file: File): { valid: boolean; error?: string } => {
     return { valid: false, error: 'ファイルサイズが小さすぎます。別のファイルを選択してください。' };
   }
 
-  // Check file size - shouldn't be larger than 1GB (practical limit)
-  const maxSize = 1 * 1024 * 1024 * 1024; // 1GB
-  if (file.size > maxSize) {
-    return { valid: false, error: 'ファイルサイズが大きすぎます（最大1GB）。' };
-  }
-
   return { valid: true };
 };
 
