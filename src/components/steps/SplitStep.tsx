@@ -61,7 +61,8 @@ export function SplitStep({
       const blobs = await splitAudio(selectedFile, "size", { maxSize: maxSizeMB });
 
       const originalNameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, "");
-      const outputExt = blobs[0]?.type === 'audio/wav' ? 'wav' : 'mp3';
+      const blobType = blobs[0]?.type ?? '';
+      const outputExt = blobType === 'audio/wav' ? 'wav' : blobType === 'audio/webm' ? 'webm' : 'mp3';
       const splitParts = blobs.map((blob, partIndex) => ({
         name: `${partIndex + 1}_${originalNameWithoutExt}.${outputExt}`,
         size: blob.size,

@@ -3,6 +3,84 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL, fetchFile } from '@ffmpeg/util';
 import { splitAudioFile } from '../utils/audioSplitter';
 
+// Files above this size cannot be loaded into FFmpeg WASM memory (fetchFile calls
+// file.arrayBuffer() which fails for ~3GB files due to browser heap limits).
+// Use streaming extraction via HTMLVideoElement + MediaRecorder instead.
+const LARGE_VIDEO_THRESHOLD_BYTES = 1.5 * 1024 * 1024 * 1024; // 1.5 GB
+
+/**
+ * Extracts audio from a video file by playing it through Web Audio API and
+ * capturing the output with MediaRecorder. Avoids the full-file-in-memory
+ * requirement of FFmpeg.wasm, at the cost of real-time extraction speed.
+ */
+const extractAudioViaMediaRecorder = (
+  file: File,
+  onProgress?: (p: number) => void
+): Promise<File> =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.src = url;
+    // muted=true is required for autoplay without a blocking permission prompt.
+    // Web Audio's createMediaElementSource still captures the audio stream
+    // regardless of the muted attribute (which only controls hardware output).
+    video.muted = true;
+    video.style.cssText =
+      'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(video);
+
+    const AudioContextCtor =
+      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const audioCtx = new AudioContextCtor();
+    const source = audioCtx.createMediaElementSource(video);
+    const dest = audioCtx.createMediaStreamDestination();
+    source.connect(dest);
+
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : 'audio/webm';
+    const recorder = new MediaRecorder(dest.stream, { mimeType });
+    const chunks: Blob[] = [];
+
+    const cleanup = () => {
+      try { audioCtx.close(); } catch { /* ignore */ }
+      try { document.body.removeChild(video); } catch { /* ignore */ }
+      URL.revokeObjectURL(url);
+    };
+
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+    recorder.onstop = () => {
+      cleanup();
+      const type = mimeType.split(';')[0];
+      const blob = new Blob(chunks, { type });
+      const baseName = file.name.replace(/\.[^/.]+$/, '');
+      resolve(new File([blob], `${baseName}_audio.webm`, { type }));
+    };
+
+    video.ontimeupdate = () => {
+      if (onProgress && !isNaN(video.duration) && video.duration > 0) {
+        // Map extraction progress to 0–39 (leaving 40–100 for splitting)
+        onProgress(Math.min(39, Math.round((video.currentTime / video.duration) * 39)));
+      }
+    };
+
+    video.onended = () => recorder.stop();
+
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('動画ファイルの読み込みに失敗しました'));
+    };
+
+    recorder.start(1000);
+    // play() is called synchronously here (before any awaits in the caller chain)
+    // so the browser's user-activation token from the button click is still valid.
+    video.play().catch((err: Error) => {
+      cleanup();
+      reject(new Error(`動画の再生に失敗しました: ${err.message}`));
+    });
+  });
+
 export const useFFmpeg = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -116,41 +194,62 @@ export const useFFmpeg = () => {
 
     // Extract audio from video files
     if (isVideoFile(file)) {
-      console.log('Video detected, extracting audio as MP3...');
-      try {
-        const ffmpeg = await loadFFmpeg();
-        const videoName = file instanceof File ? file.name : 'input.mp4';
-        const inputExt = videoName.substring(videoName.lastIndexOf('.'));
-        const inputName = 'input_video' + inputExt;
+      const fileSize = (file instanceof File ? file : file as Blob).size;
+      const isLargeVideo = fileSize >= LARGE_VIDEO_THRESHOLD_BYTES;
 
-        await ffmpeg.writeFile(inputName, await fetchFile(file));
-        await ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame',
-          '-ab', '128k', 'extracted.mp3']);
-        await ffmpeg.deleteFile(inputName);  // Free memory immediately
+      if (isLargeVideo) {
+        // fetchFile() calls file.arrayBuffer() internally, which allocates the entire file
+        // in the JS heap. For files >= ~1.5 GB this throws "File could not be read! Code=-1".
+        // Use streaming extraction via HTMLVideoElement + MediaRecorder instead.
+        console.log(`Large video detected (${(fileSize / 1024 / 1024 / 1024).toFixed(2)} GB), using streaming extraction (real-time speed)`);
+        try {
+          const videoFile = file instanceof File ? file : new File([file], 'input.mp4');
+          workingFile = await extractAudioViaMediaRecorder(videoFile, setProgress);
+          setProgress(40);
+          console.log('Streaming audio extraction complete, file size:', workingFile.size);
+        } catch (extractionError) {
+          console.error('Streaming extraction failed:', extractionError);
+          setIsLoading(false);
+          throw new Error(`動画から音声を抽出できませんでした: ${extractionError instanceof Error ? extractionError.message : String(extractionError)}`);
+        }
+      } else {
+        console.log('Video detected, extracting audio as MP3...');
+        try {
+          const ffmpeg = await loadFFmpeg();
+          const videoName = file instanceof File ? file.name : 'input.mp4';
+          const inputExt = videoName.substring(videoName.lastIndexOf('.'));
+          const inputName = 'input_video' + inputExt;
 
-        const mp3Data = await ffmpeg.readFile('extracted.mp3');
-        await ffmpeg.deleteFile('extracted.mp3');
-        const baseName = videoName.replace(/\.[^/.]+$/, '');
-        workingFile = new File([mp3Data as ArrayBuffer],
-          `${baseName}_extracted.mp3`, { type: 'audio/mpeg' });
-        setProgress(40);  // Extraction complete: 40% → split: 40-100%
-        console.log('Audio extraction complete, file size:', workingFile.size);
-      } catch (extractionError) {
-        console.error('Video extraction failed:', extractionError);
-        setIsLoading(false);
-        throw new Error(`動画から音声を抽出できませんでした: ${extractionError instanceof Error ? extractionError.message : String(extractionError)}`);
+          await ffmpeg.writeFile(inputName, await fetchFile(file));
+          await ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame',
+            '-ab', '128k', 'extracted.mp3']);
+          await ffmpeg.deleteFile(inputName);  // Free memory immediately
+
+          const mp3Data = await ffmpeg.readFile('extracted.mp3');
+          await ffmpeg.deleteFile('extracted.mp3');
+          const baseName = videoName.replace(/\.[^/.]+$/, '');
+          workingFile = new File([mp3Data as ArrayBuffer],
+            `${baseName}_extracted.mp3`, { type: 'audio/mpeg' });
+          setProgress(40);  // Extraction complete: 40% → split: 40-100%
+          console.log('Audio extraction complete, file size:', workingFile.size);
+        } catch (extractionError) {
+          console.error('Video extraction failed:', extractionError);
+          setIsLoading(false);
+          throw new Error(`動画から音声を抽出できませんでした: ${extractionError instanceof Error ? extractionError.message : String(extractionError)}`);
+        }
       }
     }
 
-    // Check if it's an MP3 or other compressed format
+    // Check if it's an MP3, MP4, or WebM (compressed format → use FFmpeg directly)
     const fileName = workingFile instanceof File ? workingFile.name : 'audio';
     const isMP3 = fileName.toLowerCase().endsWith('.mp3') || workingFile.type === 'audio/mpeg';
     const isMp4 = fileName.toLowerCase().endsWith('.mp4') || workingFile.type === 'audio/mp4';
-    
-    console.log('Split request:', { fileName, isMP3, isMp4, fileType: file.type, fileSize: file.size });
-    
-    // For MP3 and other compressed formats, use FFmpeg directly
-    if (isMP3 || isMp4) {
+    const isWebm = fileName.toLowerCase().endsWith('.webm') || workingFile.type === 'audio/webm';
+
+    console.log('Split request:', { fileName, isMP3, isMp4, isWebm, fileType: file.type, fileSize: (file as Blob).size });
+
+    // For MP3, MP4, and WebM (e.g. output of streaming extraction), use FFmpeg directly
+    if (isMP3 || isMp4 || isWebm) {
       console.log('MP3/MP4 detected, using FFmpeg directly');
       try {
         const ffmpeg = await loadFFmpeg();
