@@ -130,7 +130,7 @@ export function SplitPage() {
   }, [isProcessing, splitFiles.length, selectedFile]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-blue-50 to-cyan-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50">
       <div className="container mx-auto px-6 py-8 pt-20">
         <div className="max-w-4xl mx-auto">
 
@@ -150,7 +150,7 @@ export function SplitPage() {
           {/* Step 1: File Upload */}
           <div className="mb-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-8">
             <div className="flex items-center gap-3 mb-6">
-              <div className="flex items-center justify-center p-3 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl shadow-lg">
+              <div className="flex items-center justify-center p-3 bg-gradient-to-br from-slate-500 to-slate-600 rounded-xl shadow-lg">
                 <FileAudio className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -199,7 +199,7 @@ export function SplitPage() {
               
               <button
                 onClick={handleSplit}
-                className="w-full mt-6 px-6 py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white font-semibold rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+                className="w-full mt-6 px-6 py-3 bg-gradient-to-r from-slate-600 to-slate-600 text-white font-semibold rounded-xl hover:from-slate-700 hover:to-slate-700 transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
               >
                 <Scissors className="w-5 h-5" />
                 分割を開始
@@ -211,7 +211,7 @@ export function SplitPage() {
           {isProcessing && (
             <div className="mb-8 bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-8">
               <div className="flex items-center gap-3 mb-6">
-                <Loader2 className="w-8 h-8 text-violet-600 animate-spin" />
+                <Loader2 className="w-8 h-8 text-slate-600 animate-spin" />
                 <div>
                   <h2 className="text-2xl font-bold text-gray-800">分割処理中...</h2>
                   <p className="text-sm text-gray-600 mt-1">音声ファイルを分割しています</p>

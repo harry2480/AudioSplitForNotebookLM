@@ -26,7 +26,7 @@ export const SplitOptions: React.FC<SplitOptionsProps> = ({
   return (
     <div className={cn("space-y-6", disabled && "opacity-50 pointer-events-none")}>
       <div className="text-center mb-8">
-        <h3 className="text-2xl font-bold bg-gradient-to-r from-violet-600 to-blue-600 bg-clip-text text-transparent mb-2">
+        <h3 className="text-2xl font-bold bg-gradient-to-r from-slate-600 to-blue-600 bg-clip-text text-transparent mb-2">
           分割方式を選択
         </h3>
         <p className="text-gray-600">ファイルサイズまたは分割数を指定してください</p>
@@ -37,15 +37,15 @@ export const SplitOptions: React.FC<SplitOptionsProps> = ({
           className={cn(
             "relative p-6 rounded-2xl border-2 cursor-pointer transition-all duration-200 hover:scale-[1.02]",
             mode === 'size' 
-              ? "border-violet-400 bg-gradient-to-br from-violet-100 to-blue-100 shadow-lg" 
-              : "border-gray-200 hover:border-violet-200 bg-white hover:bg-gradient-to-br hover:from-violet-50 hover:to-blue-50"
+              ? "border-slate-400 bg-gradient-to-br from-slate-100 to-blue-100 shadow-lg" 
+              : "border-gray-200 hover:border-slate-200 bg-white hover:bg-gradient-to-br hover:from-slate-50 hover:to-blue-50"
           )}
           onClick={() => onModeChange('size')}
         >
           <div className="flex items-start space-x-4">
             <div className={cn(
               "p-3 rounded-xl",
-              mode === 'size' ? "bg-gradient-to-br from-violet-500 to-blue-600" : "bg-gray-200"
+              mode === 'size' ? "bg-gradient-to-br from-slate-500 to-blue-600" : "bg-gray-200"
             )}>
               <HardDrive className={cn(
                 "w-6 h-6",
@@ -60,7 +60,7 @@ export const SplitOptions: React.FC<SplitOptionsProps> = ({
                   value="size"
                   checked={mode === 'size'}
                   onChange={() => onModeChange('size')}
-                  className="w-5 h-5 text-violet-600 mr-3"
+                  className="w-5 h-5 text-slate-600 mr-3"
                 />
                 <span className="font-bold text-gray-800 text-lg">最大サイズ指定</span>
               </div>
@@ -78,13 +78,13 @@ export const SplitOptions: React.FC<SplitOptionsProps> = ({
                   className={cn(
                     "w-20 px-3 py-2 rounded-xl font-bold text-center transition-all",
                     mode === 'size' 
-                      ? "border-2 border-violet-300 bg-white text-violet-600 shadow-inner" 
+                      ? "border-2 border-slate-300 bg-white text-slate-600 shadow-inner" 
                       : "border border-gray-300 bg-gray-100 text-gray-400"
                   )}
                 />
                 <span className={cn(
                   "font-bold text-lg",
-                  mode === 'size' ? "text-violet-600" : "text-gray-400"
+                  mode === 'size' ? "text-slate-600" : "text-gray-400"
                 )}>MB</span>
               </div>
             </div>

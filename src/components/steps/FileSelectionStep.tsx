@@ -78,7 +78,7 @@ export function FileSelectionStep({ selectedFile, onFileSelect, onNext, onSkipSp
       
       {selectedFile && (
         <>
-          <div className="p-6 bg-gradient-to-r from-blue-100 to-violet-100 rounded-2xl border border-blue-200">
+          <div className="p-6 bg-gradient-to-r from-blue-100 to-slate-100 rounded-2xl border border-blue-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600 mb-1">選択されたファイル</p>
@@ -86,7 +86,7 @@ export function FileSelectionStep({ selectedFile, onFileSelect, onNext, onSkipSp
               </div>
               <div className="text-right">
                 <p className="text-sm text-gray-600 mb-1">ファイルサイズ</p>
-                <p className="font-bold text-2xl bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+                <p className="font-bold text-2xl bg-gradient-to-r from-blue-600 to-slate-600 bg-clip-text text-transparent">
                   {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
                 </p>
               </div>

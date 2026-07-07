@@ -73,8 +73,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
       className={cn(
         "relative border-2 border-dashed rounded-3xl p-16 text-center transition-all duration-300 cursor-pointer",
         isDragging 
-          ? "border-violet-400 bg-gradient-to-br from-violet-100 to-blue-100 scale-[1.02]" 
-          : "border-gray-300 hover:border-violet-300 bg-gradient-to-br from-white to-gray-50 hover:from-violet-50 hover:to-blue-50",
+          ? "border-slate-400 bg-gradient-to-br from-slate-100 to-blue-100 scale-[1.02]" 
+          : "border-gray-300 hover:border-slate-300 bg-gradient-to-br from-white to-gray-50 hover:from-slate-50 hover:to-blue-50",
         disabled && "opacity-50 cursor-not-allowed"
       )}
       onDragOver={handleDragOver}
@@ -91,8 +91,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
       
       <div className="flex justify-center mb-6">
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-br from-violet-400 to-blue-400 rounded-full blur-xl opacity-40 animate-pulse"></div>
-          <div className="relative p-6 bg-gradient-to-br from-violet-500 to-blue-600 rounded-full shadow-lg">
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-400 to-blue-400 rounded-full blur-xl opacity-40 animate-pulse"></div>
+          <div className="relative p-6 bg-gradient-to-br from-slate-500 to-blue-600 rounded-full shadow-lg">
             <Upload className="w-10 h-10 text-white" />
           </div>
         </div>
@@ -102,7 +102,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
         音声・動画ファイルをドロップ
       </h3>
       <p className="text-lg text-gray-600 mb-8">
-        または <span className="font-semibold bg-gradient-to-r from-violet-600 to-blue-600 bg-clip-text text-transparent">クリックして選択</span>
+        または <span className="font-semibold bg-gradient-to-r from-slate-600 to-blue-600 bg-clip-text text-transparent">クリックして選択</span>
       </p>
       
       <div className="flex items-center justify-center space-x-6">

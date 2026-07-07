@@ -85,7 +85,7 @@ export function SplitStep({
           </p>
           <button
             onClick={handleStartSplit}
-            className="px-10 py-4 bg-gradient-to-r from-violet-600 to-purple-600 text-white font-bold rounded-xl hover:from-violet-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl flex items-center gap-2 text-lg"
+            className="px-10 py-4 bg-gradient-to-r from-slate-600 to-slate-600 text-white font-bold rounded-xl hover:from-slate-700 hover:to-slate-700 transition-all shadow-lg hover:shadow-xl flex items-center gap-2 text-lg"
           >
             <Scissors className="w-5 h-5" />
             分割を実行する

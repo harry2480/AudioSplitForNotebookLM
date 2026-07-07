@@ -1,7 +1,28 @@
 import { useState, useRef, useCallback } from 'react';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
 import { toBlobURL, fetchFile } from '@ffmpeg/util';
 import { splitAudioFile } from '../utils/audioSplitter';
+
+// FFmpeg.wasm を CDN から読み込む際のタイムアウト（ms）。
+// unpkg がストール（応答も失敗も返さない）した場合の無限ローディングを防ぐ。
+const LOAD_TIMEOUT_MS = 60000;
+
+// promise が指定時間内に settle しなければ reject するラッパー。
+const withTimeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+  Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `${label}がタイムアウトしました（${ms / 1000}秒）。通信環境を確認して再度お試しください。`
+            )
+          ),
+        ms
+      )
+    ),
+  ]);
 
 export const useFFmpeg = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -38,13 +59,24 @@ export const useFFmpeg = () => {
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
     
     try {
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
+      // CDN(unpkg)がストールしても永久ハングしないようタイムアウトを設ける。
+      // タイムアウトすると promise が reject され、呼び出し側でスピナーが解除される。
+      const [coreURL, wasmURL] = await withTimeout(
+        Promise.all([
+          toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+          toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        ]),
+        LOAD_TIMEOUT_MS,
+        'FFmpegコアの読み込み'
+      );
+      await withTimeout(
+        ffmpeg.load({ coreURL, wasmURL }),
+        LOAD_TIMEOUT_MS,
+        'FFmpegの初期化'
+      );
     } catch (loadError) {
-      console.error('Failed to load FFmpeg from unpkg, trying local fallback...', loadError);
-      // Fallback or re-throw
+      console.error('Failed to load FFmpeg from unpkg:', loadError);
+      setIsLoading(false); // ハング/失敗時にローディング状態を必ず解除
       throw loadError;
     }
 
@@ -117,19 +149,39 @@ export const useFFmpeg = () => {
     // Extract audio from video files
     if (isVideoFile(file)) {
       console.log('Video detected, extracting audio as MP3...');
-      try {
-        const ffmpeg = await loadFFmpeg();
-        const videoName = file instanceof File ? file.name : 'input.mp4';
-        const inputExt = videoName.substring(videoName.lastIndexOf('.'));
-        const inputName = 'input_video' + inputExt;
+      const ffmpeg = await loadFFmpeg();
+      const videoName = file instanceof File ? file.name : 'input.mp4';
+      const inputExt = videoName.substring(videoName.lastIndexOf('.')) || '.mp4';
+      const inputName = 'input_video' + inputExt;
+      const mountDir = '/mnt_input';
+      let mounted = false;
+      let wroteFallback = false;
 
-        await ffmpeg.writeFile(inputName, await fetchFile(file));
-        await ffmpeg.exec(['-i', inputName, '-vn', '-acodec', 'libmp3lame',
+      try {
+        // 大きな動画を FileReader で一括メモリ読み込みすると
+        // "File could not be read! Code=-1"（ArrayBuffer上限/メモリ不足）で失敗する。
+        // WORKERFS でマウントすれば File を遅延参照でき、全読み込みを避けられる。
+        // File を包み直しても中身はコピーされない（参照のまま）ためメモリを消費しない。
+        const inputFile = new File([file], inputName, { type: file.type });
+
+        let inputPath = inputName;
+        try {
+          await ffmpeg.createDir(mountDir).catch(() => {}); // 既存でも無視
+          await ffmpeg.mount(FFFSType.WORKERFS, { files: [inputFile] }, mountDir);
+          inputPath = `${mountDir}/${inputName}`;
+          mounted = true;
+        } catch (mountErr) {
+          // WORKERFS 非対応環境ではメモリ読み込みにフォールバック
+          console.warn('WORKERFS mount unavailable, falling back to in-memory read:', mountErr);
+          await ffmpeg.writeFile(inputName, await fetchFile(file));
+          wroteFallback = true;
+          inputPath = inputName;
+        }
+
+        await ffmpeg.exec(['-i', inputPath, '-vn', '-acodec', 'libmp3lame',
           '-ab', '128k', 'extracted.mp3']);
-        await ffmpeg.deleteFile(inputName);  // Free memory immediately
 
         const mp3Data = await ffmpeg.readFile('extracted.mp3');
-        await ffmpeg.deleteFile('extracted.mp3');
         const baseName = videoName.replace(/\.[^/.]+$/, '');
         workingFile = new File([mp3Data as ArrayBuffer],
           `${baseName}_extracted.mp3`, { type: 'audio/mpeg' });
@@ -139,6 +191,16 @@ export const useFFmpeg = () => {
         console.error('Video extraction failed:', extractionError);
         setIsLoading(false);
         throw new Error(`動画から音声を抽出できませんでした: ${extractionError instanceof Error ? extractionError.message : String(extractionError)}`);
+      } finally {
+        // 成功・失敗どちらでも仮想FSを後始末（次回実行時の EEXIST を防ぐ）
+        if (mounted) {
+          await ffmpeg.unmount(mountDir).catch(() => {});
+          await ffmpeg.deleteDir(mountDir).catch(() => {});
+        }
+        if (wroteFallback) {
+          await ffmpeg.deleteFile(inputName).catch(() => {});
+        }
+        await ffmpeg.deleteFile('extracted.mp3').catch(() => {});
       }
     }
 
