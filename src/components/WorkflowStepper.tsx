@@ -29,11 +29,11 @@ export function WorkflowStepper({ currentStep, onStepClick, completedSteps, avai
               <div className={`
                 flex items-center justify-center w-8 h-8 rounded-full border-2 mb-1 transition-all
                 ${currentStep === step.id
-                  ? 'bg-gradient-to-r from-violet-600 to-blue-600 border-violet-600 text-white scale-110 shadow-lg' 
+                  ? 'bg-gradient-to-r from-slate-600 to-blue-600 border-slate-600 text-white scale-110 shadow-lg' 
                   : completedSteps.has(step.id)
                   ? 'bg-green-500 border-green-600 text-white'
                   : availableSteps.has(step.id)
-                  ? 'bg-violet-100 border-violet-400 text-violet-600 hover:bg-violet-200'
+                  ? 'bg-slate-100 border-slate-400 text-slate-600 hover:bg-slate-200'
                   : 'bg-gray-100 border-gray-300 text-gray-400'
                 }
               `}>
@@ -45,15 +45,15 @@ export function WorkflowStepper({ currentStep, onStepClick, completedSteps, avai
               </div>
               <div className="text-center min-w-[60px]">
                 <p className={`text-xs font-medium ${
-                  currentStep === step.id ? 'text-violet-700 font-bold' :
+                  currentStep === step.id ? 'text-slate-700 font-bold' :
                   completedSteps.has(step.id) ? 'text-green-600' :
-                  availableSteps.has(step.id) ? 'text-violet-600' : 
+                  availableSteps.has(step.id) ? 'text-slate-600' : 
                   'text-gray-400'
                 }`}>
                   {step.title}
                 </p>
                 {currentStep === step.id && (
-                  <p className="text-xs text-violet-600 font-medium">進行中</p>
+                  <p className="text-xs text-slate-600 font-medium">進行中</p>
                 )}
               </div>
             </div>

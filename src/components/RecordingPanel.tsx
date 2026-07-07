@@ -377,7 +377,7 @@ export const RecordingPanel: React.FC<Props> = ({
 
       ctx.clearRect(0, 0, cssWidth, cssHeight);
       ctx.lineWidth = 2;
-      ctx.strokeStyle = "#7c3aed"; // violet-600
+      ctx.strokeStyle = "#475569"; // slate-600
       ctx.beginPath();
 
       let peak = 0;
@@ -464,7 +464,7 @@ export const RecordingPanel: React.FC<Props> = ({
                 disabled={isFinalizing}
                 className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                   source === "system"
-                    ? "bg-white text-violet-700 shadow"
+                    ? "bg-white text-slate-700 shadow"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
@@ -476,7 +476,7 @@ export const RecordingPanel: React.FC<Props> = ({
                 disabled={isFinalizing}
                 className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                   source === "mic"
-                    ? "bg-white text-violet-700 shadow"
+                    ? "bg-white text-slate-700 shadow"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
@@ -485,7 +485,7 @@ export const RecordingPanel: React.FC<Props> = ({
               </button>
             </div>
 
-            <div className="w-16 h-16 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 mb-1">
+            <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 mb-1">
               {source === "system" ? (
                 <MonitorSpeaker className="w-8 h-8" />
               ) : (
@@ -500,7 +500,7 @@ export const RecordingPanel: React.FC<Props> = ({
             <button
               onClick={startRecording}
               disabled={isFinalizing}
-              className="flex items-center gap-2 px-8 py-3 bg-violet-600 text-white rounded-full hover:bg-violet-700 transition-colors font-bold shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-8 py-3 bg-slate-600 text-white rounded-full hover:bg-slate-700 transition-colors font-bold shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Circle className="w-5 h-5 fill-red-500" />
               {isFinalizing ? "保存中..." : "録音を開始"}

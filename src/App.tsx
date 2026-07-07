@@ -29,7 +29,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-blue-50 to-cyan-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50">
       {/* Hero Section - Always visible */}
       <HeroSection 
         currentPage={currentPage} 

@@ -115,13 +115,13 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
       <div className="max-w-5xl mx-auto px-6 py-8 pt-20">
         <div className="mb-8 flex justify-center">
             <div className="flex items-center space-x-3">
-              <div className={`flex items-center ${currentStep >= 1 ? "text-violet-600" : "text-gray-400"}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 ${currentStep >= 1 ? "bg-violet-600 text-white" : "bg-white"}`}>1</div>
+              <div className={`flex items-center ${currentStep >= 1 ? "text-slate-600" : "text-gray-400"}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 ${currentStep >= 1 ? "bg-slate-600 text-white" : "bg-white"}`}>1</div>
                 <span className="ml-2 font-medium hidden sm:inline">音声準備</span>
               </div>
-              <div className={`w-12 h-0.5 ${currentStep >= 2 ? "bg-violet-600" : "bg-gray-300"}`}></div>
-              <div className={`flex items-center ${currentStep >= 2 ? "text-violet-600" : "text-gray-400"}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 ${currentStep >= 2 ? "bg-violet-600 text-white" : "bg-white"}`}>2</div>
+              <div className={`w-12 h-0.5 ${currentStep >= 2 ? "bg-slate-600" : "bg-gray-300"}`}></div>
+              <div className={`flex items-center ${currentStep >= 2 ? "text-slate-600" : "text-gray-400"}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 ${currentStep >= 2 ? "bg-slate-600 text-white" : "bg-white"}`}>2</div>
                 <span className="ml-2 font-medium hidden sm:inline">分割保存</span>
               </div>
             </div>
@@ -131,7 +131,7 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
 
         <div className="bg-white rounded-2xl shadow-lg p-8 mb-10">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center">
+            <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
               <FileText className="w-6 h-6" />
             </div>
             <h2 className="text-2xl font-bold">1. 音声を準備</h2>

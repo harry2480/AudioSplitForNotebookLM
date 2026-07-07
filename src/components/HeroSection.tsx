@@ -59,7 +59,7 @@ export const HeroSection: React.FC<Props> = ({
 
       {/* Main Hero Section */}
       {_currentPage === "transcribe" && (
-        <div className="bg-gradient-to-r from-violet-600 to-purple-600 py-12 pt-28">
+        <div className="bg-gradient-to-r from-slate-600 to-slate-600 py-12 pt-28">
           <div className="max-w-6xl mx-auto px-6">
             <div className="text-center text-white">
               <div className="flex items-center justify-center mb-6">
