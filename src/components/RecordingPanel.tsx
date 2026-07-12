@@ -213,13 +213,15 @@ export const RecordingPanel: React.FC<Props> = ({
         writableRef.current = await handle.createWritable();
         usingDisk = true;
       } catch (err) {
-        // ユーザーが保存ダイアログをキャンセルした場合は録音を中止
+        // AbortError は保存ダイアログが実際に表示され、ユーザーが明示的にキャンセルした場合のみ発生する
+        // （＝録音開始をやめる意図）。従来通り後始末して中止する。
         if (err instanceof DOMException && err.name === "AbortError") {
           cleanupVisualizer();
           cleanupStream();
           return;
         }
-        // それ以外の失敗はメモリ方式にフォールバック
+        // それ以外（Chromeでは getDisplayMedia が user activation を消費するため showSaveFilePicker が
+        // SecurityError で失敗する等、ダイアログが出ずに失敗するケース）はメモリ方式へフォールバックして録音を継続する。
         console.warn("showSaveFilePicker failed, falling back to memory:", err);
       }
     }
@@ -416,10 +418,18 @@ export const RecordingPanel: React.FC<Props> = ({
               <Circle className="w-3 h-3 fill-current" />
               <span className="font-bold text-lg">録音中: {formatDuration(duration)}</span>
             </div>
-            {savingToDisk && (
+            {savingToDisk ? (
               <div className="flex items-center gap-2 text-gray-500 text-xs">
                 <HardDriveDownload className="w-4 h-4" />
                 <span>ディスクへ自動保存中（長時間録音OK）</span>
+              </div>
+            ) : (
+              // ディスク保存を確保できなかった場合はメモリ録音。Chromeでは getDisplayMedia が
+              // user activation を消費し showSaveFilePicker が失敗するため、PC音声では実質常にこちら。
+              // ブラウザ能力ではなく実際の結果に基づき、長時間だと失敗しうる旨を明示する。
+              <div className="flex items-center gap-1.5 text-amber-600 text-xs text-center">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>メモリに録音中です。長時間の録音はメモリ制約で失敗する場合があります。</span>
               </div>
             )}
 
