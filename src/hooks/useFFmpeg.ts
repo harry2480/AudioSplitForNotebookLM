@@ -1,88 +1,45 @@
 import { useState, useRef, useCallback } from 'react';
-import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
-import { toBlobURL, fetchFile } from '@ffmpeg/util';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile } from '@ffmpeg/util';
 import { splitAudioFile } from '../utils/audioSplitter';
-
-// FFmpeg.wasm を CDN から読み込む際のタイムアウト（ms）。
-// unpkg がストール（応答も失敗も返さない）した場合の無限ローディングを防ぐ。
-const LOAD_TIMEOUT_MS = 60000;
-
-// promise が指定時間内に settle しなければ reject するラッパー。
-const withTimeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
-  Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(
-        () =>
-          reject(
-            new Error(
-              `${label}がタイムアウトしました（${ms / 1000}秒）。通信環境を確認して再度お試しください。`
-            )
-          ),
-        ms
-      )
-    ),
-  ]);
+import { getFFmpeg } from '../utils/ffmpegLoader';
+import { convertToMp3, isMp3 } from '../utils/mp3Converter';
 
 export const useFFmpeg = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const ffmpegRef = useRef<FFmpeg | null>(null);
+  // FFmpeg 自身の進捗(0-100)を全体進捗のどの範囲に割り当てるか。
+  // 例: MP3変換フェーズは 0-40%、分割フェーズは 40-100%。
+  const progressRangeRef = useRef({ start: 0, end: 100 });
 
   const loadFFmpeg = useCallback(async () => {
     if (ffmpegRef.current) return ffmpegRef.current;
 
     setIsLoading(true);
-    const ffmpeg = new FFmpeg();
-    
-    // Throttle progress updates to reduce UI stuttering
-    let lastProgressUpdate = 0;
-    ffmpeg.on('progress', ({ progress }) => {
-      const now = Date.now();
-      const progressValue = Math.round(progress * 100);
-      
-      // Update progress at most every 100ms or for significant changes
-      if (now - lastProgressUpdate > 100 || progressValue === 100) {
-        lastProgressUpdate = now;
-        setProgress(progressValue);
-      }
-    });
-
-    // Capture logs for debugging production issues
-    ffmpeg.on('log', ({ message }) => {
-      if (message.includes('Error') || message.includes('failed')) {
-        console.error('FFmpeg Log:', message);
-      }
-    });
-
-    // Use specific version and allow fallback
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-    
     try {
-      // CDN(unpkg)がストールしても永久ハングしないようタイムアウトを設ける。
-      // タイムアウトすると promise が reject され、呼び出し側でスピナーが解除される。
-      const [coreURL, wasmURL] = await withTimeout(
-        Promise.all([
-          toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-          toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        ]),
-        LOAD_TIMEOUT_MS,
-        'FFmpegコアの読み込み'
-      );
-      await withTimeout(
-        ffmpeg.load({ coreURL, wasmURL }),
-        LOAD_TIMEOUT_MS,
-        'FFmpegの初期化'
-      );
-    } catch (loadError) {
-      console.error('Failed to load FFmpeg from unpkg:', loadError);
-      setIsLoading(false); // ハング/失敗時にローディング状態を必ず解除
-      throw loadError;
-    }
+      const ffmpeg = await getFFmpeg();
 
-    ffmpegRef.current = ffmpeg;
-    setIsLoading(false);
-    return ffmpeg;
+      // Throttle progress updates to reduce UI stuttering
+      let lastProgressUpdate = 0;
+      ffmpeg.on('progress', ({ progress }) => {
+        const now = Date.now();
+        const ratio = Math.min(1, Math.max(0, progress));
+        const { start, end } = progressRangeRef.current;
+        const progressValue = Math.round(start + ratio * (end - start));
+
+        // Update progress at most every 100ms or for significant changes
+        if (now - lastProgressUpdate > 100 || progressValue === 100) {
+          lastProgressUpdate = now;
+          setProgress(progressValue);
+        }
+      });
+
+      ffmpegRef.current = ffmpeg;
+      return ffmpeg;
+    } finally {
+      setIsLoading(false); // ハング/失敗時にローディング状態を必ず解除
+    }
   }, []);
 
   const getDuration = async (ffmpeg: FFmpeg, fileName: string): Promise<number> => {
@@ -90,9 +47,10 @@ export const useFFmpeg = () => {
     
     // Capture FFmpeg logs to extract duration
     const logs: string[] = [];
-    ffmpeg.on('log', ({ message }) => {
+    const collectLog = ({ message }: { message: string }) => {
       logs.push(message);
-    });
+    };
+    ffmpeg.on('log', collectLog);
 
     try {
       // Run ffmpeg -i to get file info (this will "fail" but give us metadata)
@@ -114,8 +72,8 @@ export const useFFmpeg = () => {
       }
     }
 
-    // Clear the log listener
-    ffmpeg.off('log', () => {});
+    // Clear the log listener（共有インスタンスなのでリスナーを残さない）
+    ffmpeg.off('log', collectLog);
 
     if (duration > 0) {
       return duration;
@@ -133,76 +91,35 @@ export const useFFmpeg = () => {
   ): Promise<Blob[]> => {
     setIsLoading(true);
     setProgress(0);
-
-    // Helper to detect video files
-    const isVideoFile = (f: File | Blob): boolean => {
-      const name = f instanceof File ? f.name.toLowerCase() : '';
-      const videoMimes = ['video/mp4', 'video/quicktime', 'video/x-msvideo',
-        'video/x-matroska', 'video/webm', 'video/mpeg', 'video/3gpp',
-        'video/x-flv', 'video/x-ms-wmv'];
-      return videoMimes.includes(f.type) || /\.(mp4|mov|avi|mkv|webm|m4v|3gp|flv|wmv)$/i.test(name);
-    };
+    progressRangeRef.current = { start: 0, end: 100 };
 
     // Use a working file variable since the parameter is const
     let workingFile: File | Blob = file;
 
-    // Extract audio from video files
-    if (isVideoFile(file)) {
-      console.log('Video detected, extracting audio as MP3...');
-      const ffmpeg = await loadFFmpeg();
-      const videoName = file instanceof File ? file.name : 'input.mp4';
-      const inputExt = videoName.substring(videoName.lastIndexOf('.')) || '.mp4';
-      const inputName = 'input_video' + inputExt;
-      const mountDir = '/mnt_input';
-      let mounted = false;
-      let wroteFallback = false;
+    // 出力を MP3 に統一するため、MP3/WAV 以外（動画・webm・ogg・m4a 等）は
+    // 分割前に MP3 へ変換する。NotebookLM は webm を扱えないため。
+    const sourceName = file instanceof File ? file.name.toLowerCase() : '';
+    const isWavSource = sourceName.endsWith('.wav') || file.type === 'audio/wav' || file.type === 'audio/x-wav';
 
+    if (!isMp3(file) && !isWavSource) {
+      console.log('Non-MP3 input detected, converting to MP3...');
       try {
-        // 大きな動画を FileReader で一括メモリ読み込みすると
-        // "File could not be read! Code=-1"（ArrayBuffer上限/メモリ不足）で失敗する。
-        // WORKERFS でマウントすれば File を遅延参照でき、全読み込みを避けられる。
-        // File を包み直しても中身はコピーされない（参照のまま）ためメモリを消費しない。
-        const inputFile = new File([file], inputName, { type: file.type });
-
-        let inputPath = inputName;
-        try {
-          await ffmpeg.createDir(mountDir).catch(() => {}); // 既存でも無視
-          await ffmpeg.mount(FFFSType.WORKERFS, { files: [inputFile] }, mountDir);
-          inputPath = `${mountDir}/${inputName}`;
-          mounted = true;
-        } catch (mountErr) {
-          // WORKERFS 非対応環境ではメモリ読み込みにフォールバック
-          console.warn('WORKERFS mount unavailable, falling back to in-memory read:', mountErr);
-          await ffmpeg.writeFile(inputName, await fetchFile(file));
-          wroteFallback = true;
-          inputPath = inputName;
-        }
-
-        await ffmpeg.exec(['-i', inputPath, '-vn', '-acodec', 'libmp3lame',
-          '-ab', '128k', 'extracted.mp3']);
-
-        const mp3Data = await ffmpeg.readFile('extracted.mp3');
-        const baseName = videoName.replace(/\.[^/.]+$/, '');
-        workingFile = new File([mp3Data as ArrayBuffer],
-          `${baseName}_extracted.mp3`, { type: 'audio/mpeg' });
-        setProgress(40);  // Extraction complete: 40% → split: 40-100%
-        console.log('Audio extraction complete, file size:', workingFile.size);
-      } catch (extractionError) {
-        console.error('Video extraction failed:', extractionError);
+        await loadFFmpeg();
+        // 変換は全体の 0-40%、分割は 40-100% に割り当てる。
+        progressRangeRef.current = { start: 0, end: 40 };
+        workingFile = await convertToMp3(file);
+        setProgress(40);
+        console.log('MP3 conversion complete, file size:', workingFile.size);
+      } catch (conversionError) {
+        progressRangeRef.current = { start: 0, end: 100 };
+        console.error('MP3 conversion failed:', conversionError);
         setIsLoading(false);
-        throw new Error(`動画から音声を抽出できませんでした: ${extractionError instanceof Error ? extractionError.message : String(extractionError)}`);
-      } finally {
-        // 成功・失敗どちらでも仮想FSを後始末（次回実行時の EEXIST を防ぐ）
-        if (mounted) {
-          await ffmpeg.unmount(mountDir).catch(() => {});
-          await ffmpeg.deleteDir(mountDir).catch(() => {});
-        }
-        if (wroteFallback) {
-          await ffmpeg.deleteFile(inputName).catch(() => {});
-        }
-        await ffmpeg.deleteFile('extracted.mp3').catch(() => {});
+        throw new Error(`音声をMP3に変換できませんでした: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`);
       }
     }
+
+    // 以降の FFmpeg 進捗は分割フェーズ（40-100%）として扱う。
+    progressRangeRef.current = workingFile === file ? { start: 0, end: 100 } : { start: 40, end: 100 };
 
     // Check if it's an MP3 or other compressed format
     const fileName = workingFile instanceof File ? workingFile.name : 'audio';
