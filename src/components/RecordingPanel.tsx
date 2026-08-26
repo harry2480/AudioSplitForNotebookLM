@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Mic, Square, Circle, AlertCircle, MonitorSpeaker, HardDriveDownload } from "lucide-react";
+import { convertToMp3 } from "../utils/mp3Converter";
 
 type Props = {
   onRecorded: (file: File | File[]) => void;
@@ -58,6 +59,8 @@ export const RecordingPanel: React.FC<Props> = ({
   const [source, setSource] = useState<Source>("system");
   const [savingToDisk, setSavingToDisk] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  // MP3変換の進捗（null = 変換していない）
+  const [conversionProgress, setConversionProgress] = useState<number | null>(null);
   const [silent, setSilent] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -133,6 +136,28 @@ export const RecordingPanel: React.FC<Props> = ({
   const setFinalizing = (value: boolean) => {
     isFinalizingRef.current = value;
     setIsFinalizing(value);
+  };
+
+  // 録音は webm / mp4 などブラウザ依存の形式で記録されるため、
+  // 取り込む前に MP3 へ変換して以降の出力を .mp3 に統一する。
+  const deliverRecording = async (recorded: File) => {
+    if (/\.mp3$/i.test(recorded.name) || recorded.type === "audio/mpeg") {
+      onRecorded(recorded);
+      return;
+    }
+    setConversionProgress(0);
+    try {
+      const mp3 = await convertToMp3(recorded, setConversionProgress);
+      onRecorded(mp3);
+    } catch (err) {
+      console.error("MP3変換に失敗しました:", err);
+      setError(
+        "MP3への変換に失敗したため、録音したままの形式で取り込みました。分割時に再度変換を試みます。"
+      );
+      onRecorded(recorded);
+    } finally {
+      setConversionProgress(null);
+    }
   };
 
   const startRecording = async () => {
@@ -267,10 +292,10 @@ export const RecordingPanel: React.FC<Props> = ({
               setError("録音のディスク保存中にエラーが発生しました。ファイルが不完全な可能性があります。");
               return;
             }
-            onRecorded(await handle.getFile());
+            await deliverRecording(await handle.getFile());
           } else {
             const blob = new Blob(chunks, { type: outMime });
-            onRecorded(new File([blob], suggestedName, { type: outMime }));
+            await deliverRecording(new File([blob], suggestedName, { type: outMime }));
           }
         } catch (err) {
           console.error(err);
@@ -513,12 +538,18 @@ export const RecordingPanel: React.FC<Props> = ({
               className="flex items-center gap-2 px-8 py-3 bg-slate-600 text-white rounded-full hover:bg-slate-700 transition-colors font-bold shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Circle className="w-5 h-5 fill-red-500" />
-              {isFinalizing ? "保存中..." : "録音を開始"}
+              {isFinalizing
+                ? conversionProgress !== null
+                  ? "MP3に変換中..."
+                  : "保存中..."
+                : "録音を開始"}
             </button>
 
             {isFinalizing && (
               <p className="text-xs text-gray-500 text-center mt-1 max-w-sm">
-                録音ファイルを保存しています。完了するまでお待ちください。
+                {conversionProgress !== null
+                  ? `MP3に変換しています... ${conversionProgress}%（長い録音では時間がかかります）`
+                  : "録音ファイルを保存しています。完了するまでお待ちください。"}
               </p>
             )}
 
