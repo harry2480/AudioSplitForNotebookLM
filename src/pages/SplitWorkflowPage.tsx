@@ -19,11 +19,14 @@ type Props = {
 };
 
 export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }: Props) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const selectedFile = selectedFiles[0] ?? null;
   const [isPending, startTransition] = useTransition();
   const [splitFiles, setSplitFiles] = useState<SplitFile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isRecordingActive, setIsRecordingActive] = useState<boolean>(false);
+  // 分割中に選択を変えると、旧ループの結果が新しい選択に混入し FFmpeg も並行実行されるため禁止する
+  const [isSplitting, setIsSplitting] = useState(false);
 
   const handleRecordingStateChange = (isActive: boolean) => {
     setIsRecordingActive(isActive);
@@ -71,11 +74,20 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
         blob: new Blob([segment], { type: segment.type }),
         originalFileName: file[0]?.name || 'audio'
       }));
-      setSelectedFile(file[0]);
+      setSelectedFiles(file[0] ? [file[0]] : []);
       startTransition(() => { setSplitFiles(sFiles); });
       return;
     }
-    setSelectedFile(file);
+    setSelectedFiles([file]);
+  }, [cleanupSplitFiles]);
+
+  const handleFilesSelect = useCallback((files: File[], skipped: string[]) => {
+    cleanupSplitFiles();
+    setSplitFiles([]);
+    setError(skipped.length > 0
+      ? `次の${skipped.length}件は対応していない形式か小さすぎるため除外しました: ${skipped.join('、')}`
+      : null);
+    setSelectedFiles(files);
   }, [cleanupSplitFiles]);
 
   const handleDownload = useCallback((file: SplitFile) => { downloadFile(file); }, []);
@@ -85,7 +97,10 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
       try {
         console.log('handleDownloadAll triggered with', splitFiles.length, 'files');
         // selectedFileがない場合は最初のファイルから取得を試みる
-        const fileName = selectedFile?.name || splitFiles[0].originalFileName || 'audio_split';
+        // 複数ファイルをまとめた場合は特定のファイル名を付けない
+        const fileName = selectedFiles.length > 1
+          ? 'audio_files'
+          : (selectedFile?.name || splitFiles[0].originalFileName || 'audio_split');
         console.log('Using fileName for ZIP:', fileName);
         await downloadAllAsZip(splitFiles, fileName);
       } catch (error) {
@@ -96,7 +111,7 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
       console.warn('handleDownloadAll: No splitFiles available', splitFiles);
       setError('保存するファイルがありません。まずは分割を実行してください。');
     }
-  }, [splitFiles, selectedFile]);
+  }, [splitFiles, selectedFile, selectedFiles.length]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -140,14 +155,20 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
             <>
               <RecordingPanel onRecorded={handleFileSelect} onRecordingStateChange={handleRecordingStateChange} onSegmentsStateChange={handleSegmentsStateChange} />
               <div className="mt-6 border-t pt-6">
-                <FileUpload onFileSelect={handleFileSelect} disabled={isPending} />
+                <FileUpload onFileSelect={handleFileSelect} onFilesSelect={handleFilesSelect} disabled={isPending} />
                 <p className="text-sm text-gray-500 mt-2 text-center"> 200MB以上のファイルは自動分割されます</p>
               </div>
             </>
           ) : (
-            <div className="p-4 bg-green-50 border border-green-200 rounded-xl flex justify-between items-center">
-              <span className="font-medium text-green-800">{selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(1)} MB)</span>
-              <button onClick={() => { setSelectedFile(null); setSplitFiles([]); }} className="text-green-700 underline hover:text-green-800 transition-colors">変更する</button>
+            <div className="p-4 bg-green-50 border border-green-200 rounded-xl flex justify-between items-start gap-4">
+              <ul className="space-y-1 min-w-0">
+                {selectedFiles.map((f, i) => (
+                  <li key={i} className="font-medium text-green-800 truncate">
+                    {f.name} ({(f.size / 1024 / 1024).toFixed(1)} MB)
+                  </li>
+                ))}
+              </ul>
+              <button onClick={() => { setSelectedFiles([]); setSplitFiles([]); setError(null); }} disabled={isSplitting} className="flex-shrink-0 text-green-700 underline hover:text-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline">変更する</button>
             </div>
           )}
         </div>
@@ -157,7 +178,8 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
             <h2 className="text-2xl font-bold mb-6">2. 分割保存</h2>
             <SplitStep
               splitFiles={splitFiles}
-              selectedFile={selectedFile}
+              selectedFiles={selectedFiles}
+              onProcessingStateChange={setIsSplitting}
               splitAudio={splitAudio}
               progress={progress}
               onDownloadSplit={handleDownload} 

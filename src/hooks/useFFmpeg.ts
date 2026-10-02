@@ -90,9 +90,11 @@ export const useFFmpeg = () => {
     
     // Capture FFmpeg logs to extract duration
     const logs: string[] = [];
-    ffmpeg.on('log', ({ message }) => {
+    // 同一関数参照で off しないと解除されず、連続処理でリスナーが増え続ける
+    const onLog = ({ message }: { message: string }) => {
       logs.push(message);
-    });
+    };
+    ffmpeg.on('log', onLog);
 
     try {
       // Run ffmpeg -i to get file info (this will "fail" but give us metadata)
@@ -115,7 +117,7 @@ export const useFFmpeg = () => {
     }
 
     // Clear the log listener
-    ffmpeg.off('log', () => {});
+    ffmpeg.off('log', onLog);
 
     if (duration > 0) {
       return duration;
@@ -179,7 +181,7 @@ export const useFFmpeg = () => {
         }
 
         await ffmpeg.exec(['-i', inputPath, '-vn', '-acodec', 'libmp3lame',
-          '-ab', '128k', 'extracted.mp3']);
+          '-ab', '128k', '-y', 'extracted.mp3']);
 
         const mp3Data = await ffmpeg.readFile('extracted.mp3');
         const baseName = videoName.replace(/\.[^/.]+$/, '');
@@ -250,10 +252,12 @@ export const useFFmpeg = () => {
                   '-t', actualDuration.toString(),
                   '-c', 'copy',
                   '-avoid_negative_ts', 'make_zero',
+                  '-y',
                   outputFile
                 ]);
 
                 const data = await ffmpeg.readFile(outputFile);
+                await ffmpeg.deleteFile(outputFile).catch(() => {});
                 const dataArray = new Uint8Array(data as ArrayBuffer);
                 if (dataArray.byteLength > 0) {
                   results.push(new Blob([dataArray], { type: workingFile.type }));
@@ -285,10 +289,12 @@ export const useFFmpeg = () => {
                   '-t', actualDuration.toString(),
                   '-c', 'copy',
                   '-avoid_negative_ts', 'make_zero',
+                  '-y',
                   outputFile
                 ]);
 
                 const data = await ffmpeg.readFile(outputFile);
+                await ffmpeg.deleteFile(outputFile).catch(() => {});
                 const dataArray = new Uint8Array(data as ArrayBuffer);
                 if (dataArray.byteLength > 0) {
                   results.push(new Blob([dataArray], { type: workingFile.type }));
@@ -302,6 +308,8 @@ export const useFFmpeg = () => {
           }
         }
 
+        // 連続処理（複数ファイル）でメモリFSに残らないよう入力を削除
+        await ffmpeg.deleteFile(inputFileName).catch(() => {});
         console.log('FFmpeg split completed, total parts:', results.length);
         setIsLoading(false);
         return results;
@@ -380,10 +388,12 @@ export const useFFmpeg = () => {
                 '-t', actualDuration.toString(),
                 '-c', 'copy',
                 '-avoid_negative_ts', 'make_zero',
+                '-y',
                 outputFile
               ]);
 
               const data = await ffmpeg.readFile(outputFile);
+              await ffmpeg.deleteFile(outputFile).catch(() => {});
               const dataArray = new Uint8Array(data as ArrayBuffer);
               if (dataArray.byteLength > 0) {
                 results.push(new Blob([dataArray], { type: workingFile.type }));
@@ -417,10 +427,12 @@ export const useFFmpeg = () => {
                 '-t', actualDuration.toString(),
                 '-c', 'copy',
                 '-avoid_negative_ts', 'make_zero',
+                '-y',
                 outputFile
               ]);
 
               const data = await ffmpeg.readFile(outputFile);
+              await ffmpeg.deleteFile(outputFile).catch(() => {});
               const dataArray = new Uint8Array(data as ArrayBuffer);
               if (dataArray.byteLength > 0) {
                 results.push(new Blob([dataArray], { type: workingFile.type }));
@@ -434,6 +446,8 @@ export const useFFmpeg = () => {
         }
       }
 
+      // 連続処理（複数ファイル）でメモリFSに残らないよう入力を削除
+      await ffmpeg.deleteFile(inputFileName).catch(() => {});
       console.log('FFmpeg split completed, total parts:', results.length);
       setIsLoading(false);
       return results;

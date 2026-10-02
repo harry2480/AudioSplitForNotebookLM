@@ -4,8 +4,16 @@ import { cn } from '../lib/utils';
 
 interface FileUploadProps {
   onFileSelect: (file: File) => void;
+  // 指定すると複数選択モードになり、有効なファイルをまとめて受け取る
+  // skipped: 非対応・小さすぎるため除外したファイル名（親で利用者に通知する）
+  onFilesSelect?: (files: File[], skipped: string[]) => void;
   disabled?: boolean;
 }
+
+const isMediaFile = (file: File) =>
+  file.type.startsWith('audio/') ||
+  file.type.startsWith('video/') ||
+  /\.(mp3|wav|m4a|aac|flac|ogg|opus|webm|mp4|m4v|mov|avi|mkv|3gp|flv|wmv)$/i.test(file.name);
 
 const validateAudioFile = (file: File): { valid: boolean; error?: string } => {
   // Check file size - must be at least 10KB (likely not a valid audio file if smaller)
@@ -17,7 +25,7 @@ const validateAudioFile = (file: File): { valid: boolean; error?: string } => {
   return { valid: true };
 };
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onFilesSelect, disabled }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -31,42 +39,48 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
     setIsDragging(false);
   }, []);
 
+  // 複数モード: 無効なファイルは除外して残りを渡す。単一モード: 先頭の1件のみ。
+  // checkMedia=false: ファイル選択ダイアログは accept で絞り込み済みなので形式判定しない（従来どおり）
+  const handleFiles = useCallback((files: File[], checkMedia: boolean) => {
+    setValidationError(null);
+    const mediaFiles = checkMedia ? files.filter(isMediaFile) : files;
+    if (mediaFiles.length === 0) {
+      setValidationError('音声・動画ファイルを選択してください。');
+      return;
+    }
+
+    if (onFilesSelect) {
+      const validFiles = mediaFiles.filter(file => validateAudioFile(file).valid);
+      if (validFiles.length === 0) {
+        setValidationError('有効な音声・動画ファイルがありません。');
+        return;
+      }
+      const skipped = files.filter(file => !validFiles.includes(file)).map(file => file.name);
+      onFilesSelect(validFiles, skipped);
+      return;
+    }
+
+    const validation = validateAudioFile(mediaFiles[0]);
+    if (!validation.valid) {
+      setValidationError(validation.error || 'ファイルが無効です。');
+      return;
+    }
+    onFileSelect(mediaFiles[0]);
+  }, [onFileSelect, onFilesSelect]);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    setValidationError(null);
-
-    const files = Array.from(e.dataTransfer.files);
-    const mediaFile = files.find(file => 
-      file.type.startsWith('audio/') || 
-      file.type.startsWith('video/') ||
-      file.name.match(/\.(mp3|wav|m4a|ogg|webm|mp4|mov|avi|mkv)$/i)
-    );
-
-    if (mediaFile) {
-      const validation = validateAudioFile(mediaFile);
-      if (!validation.valid) {
-        setValidationError(validation.error || 'ファイルが無効です。');
-        return;
-      }
-      onFileSelect(mediaFile);
-    } else {
-      setValidationError('音声・動画ファイルを選択してください。');
-    }
-  }, [onFileSelect]);
+    if (disabled) return;
+    handleFiles(Array.from(e.dataTransfer.files), true);
+  }, [handleFiles, disabled]);
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setValidationError(null);
-      const validation = validateAudioFile(file);
-      if (!validation.valid) {
-        setValidationError(validation.error || 'ファイルが無効です。');
-        return;
-      }
-      onFileSelect(file);
-    }
-  }, [onFileSelect]);
+    const files = Array.from(e.target.files ?? []);
+    // 同じファイルを選び直しても onChange が発火するようにリセット
+    e.target.value = '';
+    if (files.length > 0) handleFiles(files, !!onFilesSelect);
+  }, [handleFiles, onFilesSelect]);
 
   return (
     <div
@@ -83,8 +97,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
     >
       <input
         type="file"
-        accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.webm,.mp4,.mov,.avi,.mkv"
+        accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.opus,.webm,.mp4,.m4v,.mov,.avi,.mkv,.3gp,.flv,.wmv"
         onChange={handleFileInput}
+        multiple={!!onFilesSelect}
         disabled={disabled}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
       />
@@ -101,6 +116,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
       <h3 className="text-2xl font-bold text-gray-800 mb-2">
         音声・動画ファイルをドロップ
       </h3>
+      {onFilesSelect && (
+        <p className="text-sm text-gray-500 mb-2">複数ファイルをまとめて選択できます</p>
+      )}
       <p className="text-lg text-gray-600 mb-8">
         または <span className="font-semibold bg-gradient-to-r from-slate-600 to-blue-600 bg-clip-text text-transparent">クリックして選択</span>
       </p>
