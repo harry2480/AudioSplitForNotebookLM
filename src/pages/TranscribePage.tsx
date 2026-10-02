@@ -66,7 +66,7 @@ export function SplitWorkflowPage({ onRecordingStateChange, onStepStateChange }:
     
     if (Array.isArray(file)) {
       const sFiles = file.map((segment, index) => ({
-        name: segment.name || `segment_${index + 1}.webm`,
+        name: segment.name || `segment_${index + 1}.mp3`,
         size: segment.size,
         blob: new Blob([segment], { type: segment.type }),
         originalFileName: file[0]?.name || 'audio'

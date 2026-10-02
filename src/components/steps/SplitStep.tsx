@@ -90,9 +90,10 @@ export function SplitStep({
         updateStatus(fileIndex, { state: "processing" });
 
         const prefix = isBatch ? `(${fileIndex + 1}/${files.length}) ${file.name}: ` : "";
-        const isVideo = /\.(mp4|mov|avi|mkv|webm|m4v|3gp|flv|wmv)$/i.test(file.name);
-        setStatus(prefix + (isVideo
-          ? "動画から音声を抽出中...（時間がかかる場合があります）"
+        // MP3/WAV 以外は分割前に MP3 へ変換されるため、その旨を表示する。
+        const needsConversion = !/\.(mp3|wav)$/i.test(file.name);
+        setStatus(prefix + (needsConversion
+          ? "音声をMP3に変換中...（時間がかかる場合があります）"
           : "分割の準備中..."));
 
         try {
