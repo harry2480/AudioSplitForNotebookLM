@@ -31,6 +31,24 @@ const SILENCE_GRACE_MS = 2500;
 // timesliceで刻む間隔（ms）。ディスク/メモリへ小分けに吐き出すために使う。
 const TIMESLICE_MS = 10000;
 
+// 「録音しながらディスクに保存」の設定を毎回やり直さずに済むよう端末に記憶する。
+// プライベートモード等で localStorage が使えない場合は既定値（OFF）で動作する。
+const SAVE_TO_DISK_KEY = "recording.saveToDisk";
+const loadSaveToDisk = (): boolean => {
+  try {
+    return window.localStorage.getItem(SAVE_TO_DISK_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const storeSaveToDisk = (value: boolean) => {
+  try {
+    window.localStorage.setItem(SAVE_TO_DISK_KEY, value ? "1" : "0");
+  } catch {
+    /* noop */
+  }
+};
+
 const supportsFileSystemAccess = (): boolean =>
   typeof window !== "undefined" && "showSaveFilePicker" in window;
 
@@ -58,6 +76,9 @@ export const RecordingPanel: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<Source>("system");
   const [savingToDisk, setSavingToDisk] = useState(false);
+  // ディスク逐次保存は長時間録音向けの任意機能。録音は webm 等で書き出されるため、
+  // ON にすると開始時に webm の保存先ダイアログが出る。OFF ならメモリ録音→停止後にMP3化。
+  const [saveToDisk, setSaveToDisk] = useState(loadSaveToDisk);
   const [isFinalizing, setIsFinalizing] = useState(false);
   // MP3変換の進捗（null = 変換していない）
   const [conversionProgress, setConversionProgress] = useState<number | null>(null);
@@ -222,7 +243,7 @@ export const RecordingPanel: React.FC<Props> = ({
     writeErrorRef.current = false;
     let usingDisk = false;
 
-    const savePicker = window.showSaveFilePicker;
+    const savePicker = saveToDisk ? window.showSaveFilePicker : undefined;
     if (savePicker) {
       try {
         const handle = await savePicker({
@@ -248,6 +269,12 @@ export const RecordingPanel: React.FC<Props> = ({
         // それ以外（Chromeでは getDisplayMedia が user activation を消費するため showSaveFilePicker が
         // SecurityError で失敗する等、ダイアログが出ずに失敗するケース）はメモリ方式へフォールバックして録音を継続する。
         console.warn("showSaveFilePicker failed, falling back to memory:", err);
+        // ユーザーが明示的にディスク保存を選んでいるので、黙って切り替えずに知らせる
+        setError(
+          source === "system"
+            ? "PC音声の録音ではブラウザの制約で保存ダイアログを開けないため、ディスク保存せずメモリに録音します。"
+            : "保存先を確保できなかったため、ディスク保存せずメモリに録音します。"
+        );
       }
     }
     setSavingToDisk(usingDisk);
@@ -449,8 +476,8 @@ export const RecordingPanel: React.FC<Props> = ({
                 <span>ディスクへ自動保存中（長時間録音OK）</span>
               </div>
             ) : (
-              // ディスク保存を確保できなかった場合はメモリ録音。Chromeでは getDisplayMedia が
-              // user activation を消費し showSaveFilePicker が失敗するため、PC音声では実質常にこちら。
+              // ディスク保存がOFF（既定）か、確保に失敗した場合はメモリ録音。Chromeでは getDisplayMedia が
+              // user activation を消費し showSaveFilePicker が失敗するため、PC音声ではONでもこちらになる。
               // ブラウザ能力ではなく実際の結果に基づき、長時間だと失敗しうる旨を明示する。
               <div className="flex items-center gap-1.5 text-amber-600 text-xs text-center">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -532,6 +559,26 @@ export const RecordingPanel: React.FC<Props> = ({
                 ? "再生中の動画や会議アプリなど、PCから出る音を直接録音します"
                 : "ミーティングの音声を直接録音して分割できます"}
             </p>
+            {supportsFileSystemAccess() && (
+              <label className="flex items-start gap-2 text-sm text-gray-600 cursor-pointer max-w-sm">
+                <input
+                  type="checkbox"
+                  checked={saveToDisk}
+                  onChange={(e) => {
+                    setSaveToDisk(e.target.checked);
+                    storeSaveToDisk(e.target.checked);
+                  }}
+                  disabled={isFinalizing}
+                  className="mt-0.5 w-4 h-4 rounded"
+                />
+                <span>
+                  録音しながらディスクに保存する（長時間録音向け）
+                  <span className="block text-xs text-gray-400">
+                    開始時に録音ファイル（.webm 等）の保存先を選びます。停止後はMP3に変換して取り込みます。
+                  </span>
+                </span>
+              </label>
+            )}
             <button
               onClick={startRecording}
               disabled={isFinalizing}
