@@ -131,9 +131,12 @@ export const useFFmpeg = () => {
     // For MP3 and other compressed formats, use FFmpeg directly
     if (isMP3 || isMp4) {
       console.log('MP3/MP4 detected, using FFmpeg directly');
+      // 失敗時も入力を MEMFS から消せるよう try の外で保持する
+      let cleanupFFmpeg: FFmpeg | null = null;
+      const inputFileName = 'input' + fileName.substring(fileName.lastIndexOf('.'));
       try {
         const ffmpeg = await loadFFmpeg();
-        const inputFileName = 'input' + fileName.substring(fileName.lastIndexOf('.'));
+        cleanupFFmpeg = ffmpeg;
         const extension = fileName.substring(fileName.lastIndexOf('.') + 1);
 
         console.log('Writing file to FFmpeg:', inputFileName);
@@ -167,10 +170,12 @@ export const useFFmpeg = () => {
                   '-t', actualDuration.toString(),
                   '-c', 'copy',
                   '-avoid_negative_ts', 'make_zero',
+                  '-y',
                   outputFile
                 ]);
 
                 const data = await ffmpeg.readFile(outputFile);
+                await ffmpeg.deleteFile(outputFile).catch(() => {});
                 const dataArray = new Uint8Array(data as ArrayBuffer);
                 if (dataArray.byteLength > 0) {
                   results.push(new Blob([dataArray], { type: workingFile.type }));
@@ -202,10 +207,12 @@ export const useFFmpeg = () => {
                   '-t', actualDuration.toString(),
                   '-c', 'copy',
                   '-avoid_negative_ts', 'make_zero',
+                  '-y',
                   outputFile
                 ]);
 
                 const data = await ffmpeg.readFile(outputFile);
+                await ffmpeg.deleteFile(outputFile).catch(() => {});
                 const dataArray = new Uint8Array(data as ArrayBuffer);
                 if (dataArray.byteLength > 0) {
                   results.push(new Blob([dataArray], { type: workingFile.type }));
@@ -226,6 +233,9 @@ export const useFFmpeg = () => {
         console.error('FFmpeg error:', ffmpegError);
         setIsLoading(false);
         throw ffmpegError;
+      } finally {
+        // 連続処理（複数ファイル）でメモリFSに残らないよう、成功・失敗どちらでも入力を削除
+        await cleanupFFmpeg?.deleteFile(inputFileName).catch(() => {});
       }
     }
     
@@ -253,14 +263,17 @@ export const useFFmpeg = () => {
       console.log(`Skipping Web Audio API (size: ${((workingFile instanceof Blob ? workingFile.size : 0) / 1024 / 1024).toFixed(1)}MB, wav: ${isWav}) to prevent memory crash (Error Code 5)`);
     }
 
+    // 失敗時も入力を MEMFS から消せるよう try の外で保持する
+    let cleanupFFmpeg: FFmpeg | null = null;
+    const fileNameForFFmpeg = workingFile instanceof File ? workingFile.name : 'audio.wav';
+    const inputFileName = 'input' + fileNameForFFmpeg.substring(fileNameForFFmpeg.lastIndexOf('.'));
     try {
       // Use FFmpeg directly for larger files or compressed formats
       console.log('Using FFmpeg.wasm directly for stability...');
       const ffmpeg = await loadFFmpeg();
+      cleanupFFmpeg = ffmpeg;
       console.log('FFmpeg loaded successfully');
 
-      const fileNameForFFmpeg = workingFile instanceof File ? workingFile.name : 'audio.wav';
-      const inputFileName = 'input' + fileNameForFFmpeg.substring(fileNameForFFmpeg.lastIndexOf('.'));
       const extension = fileNameForFFmpeg.substring(fileNameForFFmpeg.lastIndexOf('.') + 1);
 
       console.log('Writing file to FFmpeg:', inputFileName);
@@ -297,10 +310,12 @@ export const useFFmpeg = () => {
                 '-t', actualDuration.toString(),
                 '-c', 'copy',
                 '-avoid_negative_ts', 'make_zero',
+                '-y',
                 outputFile
               ]);
 
               const data = await ffmpeg.readFile(outputFile);
+              await ffmpeg.deleteFile(outputFile).catch(() => {});
               const dataArray = new Uint8Array(data as ArrayBuffer);
               if (dataArray.byteLength > 0) {
                 results.push(new Blob([dataArray], { type: workingFile.type }));
@@ -334,10 +349,12 @@ export const useFFmpeg = () => {
                 '-t', actualDuration.toString(),
                 '-c', 'copy',
                 '-avoid_negative_ts', 'make_zero',
+                '-y',
                 outputFile
               ]);
 
               const data = await ffmpeg.readFile(outputFile);
+              await ffmpeg.deleteFile(outputFile).catch(() => {});
               const dataArray = new Uint8Array(data as ArrayBuffer);
               if (dataArray.byteLength > 0) {
                 results.push(new Blob([dataArray], { type: workingFile.type }));
@@ -359,6 +376,9 @@ export const useFFmpeg = () => {
       setIsLoading(false);
       const ffmpegErrorMessage = ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError);
       throw new Error(`音声ファイルの分割に失敗しました。ブラウザがサポートしていない可能性があります。\nエラー: ${ffmpegErrorMessage}`);
+    } finally {
+      // 連続処理（複数ファイル）でメモリFSに残らないよう、成功・失敗どちらでも入力を削除
+      await cleanupFFmpeg?.deleteFile(inputFileName).catch(() => {});
     }
   }, [loadFFmpeg]);
 
