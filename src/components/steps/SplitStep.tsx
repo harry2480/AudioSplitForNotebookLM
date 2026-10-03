@@ -42,6 +42,8 @@ export function SplitStep({
   const [isZipping, setIsZipping] = useState(false);
   const [fileStatuses, setFileStatuses] = useState<FileStatus[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // OFF: 複数に分割された時だけ「1_」「2_」を付ける。ON: 1ファイルでも常に付ける。
+  const [alwaysNumber, setAlwaysNumber] = useState(false);
   const processingRef = useRef(false);
 
   const files = selectedFiles ?? (selectedFile ? [selectedFile] : []);
@@ -105,10 +107,12 @@ export function SplitStep({
           const outputExt = blobs[0]?.type === 'audio/wav' ? 'wav' : 'mp3';
           blobs.forEach((blob, partIndex) => {
             // 同名ファイルを複数選んだ場合に ZIP 内で上書きされないよう連番を付ける
-            const baseName = `${partIndex + 1}_${originalNameWithoutExt}`;
+            const numbered = alwaysNumber || blobs.length > 1;
+            const baseName = numbered ? `${partIndex + 1}_${originalNameWithoutExt}` : originalNameWithoutExt;
             let name = `${baseName}.${outputExt}`;
-            for (let n = 2; usedNames.has(name); n++) name = `${baseName} (${n}).${outputExt}`;
-            usedNames.add(name);
+            // macOS/Windows は大文字小文字を区別しないため、ZIP展開時の上書きを防ぐよう小文字で判定する
+            for (let n = 2; usedNames.has(name.toLowerCase()); n++) name = `${baseName} (${n}).${outputExt}`;
+            usedNames.add(name.toLowerCase());
             allParts.push({ name, size: blob.size, blob, originalFileName: file.name });
           });
           updateStatus(fileIndex, { state: "done", parts: blobs.length });
@@ -148,11 +152,25 @@ export function SplitStep({
     <div className="space-y-6">
       {!hasCompleted && !isProcessing && (
         <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50">
-          <p className="text-gray-600 mb-6 text-center">
+          <p className="text-gray-600 mb-4 text-center">
             {isBatch
               ? `${files.length}件のファイルを NotebookLM 用に最適化（200MB以下に分割）しますか？`
               : "ファイルを NotebookLM 用に最適化（200MB以下に分割）しますか？"}
           </p>
+          <label className="flex items-start gap-2 text-sm text-gray-600 cursor-pointer mb-6">
+            <input
+              type="checkbox"
+              checked={alwaysNumber}
+              onChange={(e) => setAlwaysNumber(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded"
+            />
+            <span>
+              分割されなかったファイルにも番号（1_）を付ける
+              <span className="block text-xs text-gray-400">
+                OFFの場合、複数に分割された時だけ「1_」「2_」…を付けます
+              </span>
+            </span>
+          </label>
           <button
             onClick={handleStartSplit}
             className="px-10 py-4 bg-gradient-to-r from-slate-600 to-slate-600 text-white font-bold rounded-xl hover:from-slate-700 hover:to-slate-700 transition-all shadow-lg hover:shadow-xl flex items-center gap-2 text-lg"
